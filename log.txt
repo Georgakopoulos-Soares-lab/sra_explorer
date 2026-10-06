@@ -1,0 +1,2 @@
+cd Automations/output/
+tail -f transfer.log
