@@ -1,0 +1,5 @@
+/* antd's CSS-in-JS styles go in the "antd" layer, between Tailwind's base
+   (preflight) and utilities, so Tailwind classes can override antd styles. */
+@layer theme, base, antd, components, utilities;
+
+@import "tailwindcss";

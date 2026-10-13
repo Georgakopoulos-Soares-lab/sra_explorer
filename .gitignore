@@ -8,3 +8,5 @@
 .env
 backend/.env.example
 *__init__.py
+*.json
+*.svg
