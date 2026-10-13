@@ -1,7 +1,9 @@
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SRA Explorer API", lifespan=lifespan)
+
+# The Vite dev server proxies /api to this app, so CORS only matters when the
+# frontend calls the API directly (e.g. VITE_API_BASE_URL=http://localhost:8000).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
