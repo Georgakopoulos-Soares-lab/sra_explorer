@@ -4,3 +4,7 @@
 *.3AKoiK
 *.pyc
 *.csv
+.venv/
+.env
+backend/.env.example
+*__init__.py

@@ -1,0 +1,78 @@
+from datetime import date
+from typing import Any, Optional
+
+from sqlalchemy import BigInteger, Index, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from .database import Base
+
+
+class Bioproject(Base):
+    __tablename__ = "bioprojects"
+    __table_args__ = (
+        Index("bioprojects_sra_study_idx", "sra_study"),
+        Index("bioprojects_tax_id_idx", "tax_id"),
+    )
+
+    bioproject: Mapped[str] = mapped_column(Text, primary_key=True)
+    sra_study: Mapped[str] = mapped_column(Text, primary_key=True)
+    n_experiments: Mapped[Optional[int]]
+    found_in_bioproject_xml: Mapped[Optional[bool]]
+    bioproject_uid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    name: Mapped[Optional[str]] = mapped_column(Text)
+    title: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    data_types: Mapped[Optional[str]] = mapped_column(Text)
+    organism_name: Mapped[Optional[str]] = mapped_column(Text)
+    tax_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    supergroup: Mapped[Optional[str]] = mapped_column(Text)
+    target_material: Mapped[Optional[str]] = mapped_column(Text)
+    target_capture: Mapped[Optional[str]] = mapped_column(Text)
+    sample_scope: Mapped[Optional[str]] = mapped_column(Text)
+    method_type: Mapped[Optional[str]] = mapped_column(Text)
+    objectives: Mapped[Optional[str]] = mapped_column(Text)
+    relevance: Mapped[Optional[str]] = mapped_column(Text)
+    project_release_date: Mapped[Optional[date]]
+    geo_accessions: Mapped[Optional[str]] = mapped_column(Text)
+    center_ids: Mapped[Optional[Any]] = mapped_column(JSONB)
+    external_links: Mapped[Optional[Any]] = mapped_column(JSONB)
+    grants: Mapped[Optional[Any]] = mapped_column(JSONB)
+    publication_count: Mapped[Optional[int]]
+    pubmed_ids: Mapped[Optional[str]] = mapped_column(Text)
+    first_publication_date: Mapped[Optional[date]]
+    journals: Mapped[Optional[str]] = mapped_column(Text)
+    publication_titles: Mapped[Optional[str]] = mapped_column(Text)
+    publications: Mapped[Optional[Any]] = mapped_column(JSONB)
+    submission_id: Mapped[Optional[str]] = mapped_column(Text)
+    submitted_date: Mapped[Optional[date]]
+    last_update_date: Mapped[Optional[date]]
+    organization: Mapped[Optional[str]] = mapped_column(Text)
+    organization_country: Mapped[Optional[str]] = mapped_column(Text)
+    access: Mapped[Optional[str]] = mapped_column(Text)
+    parent_projects: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class SraMetadata(Base):
+    """One row per SRA run (acc = SRR/ERR/DRR accession)."""
+
+    __tablename__ = "sra_metadata"
+
+    acc: Mapped[str] = mapped_column(Text, primary_key=True)
+    assay_type: Mapped[Optional[str]] = mapped_column(Text)
+    center_name: Mapped[Optional[str]] = mapped_column(Text)
+    experiment: Mapped[Optional[str]] = mapped_column(Text, index=True)
+    sample_name: Mapped[Optional[str]] = mapped_column(Text)
+    instrument: Mapped[Optional[str]] = mapped_column(Text)
+    librarylayout: Mapped[Optional[str]] = mapped_column(Text)
+    libraryselection: Mapped[Optional[str]] = mapped_column(Text)
+    librarysource: Mapped[Optional[str]] = mapped_column(Text)
+    platform: Mapped[Optional[str]] = mapped_column(Text)
+    sample_acc: Mapped[Optional[str]] = mapped_column(Text)
+    biosample: Mapped[Optional[str]] = mapped_column(Text, index=True)
+    organism: Mapped[Optional[str]] = mapped_column(Text, index=True)
+    sra_study: Mapped[Optional[str]] = mapped_column(Text, index=True)
+    releasedate: Mapped[Optional[date]]
+    bioproject: Mapped[Optional[str]] = mapped_column(Text, index=True)
+    library_name: Mapped[Optional[str]] = mapped_column(Text)
+    geo_loc_name_country_calc: Mapped[Optional[str]] = mapped_column(Text)
