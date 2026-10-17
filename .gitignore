@@ -10,3 +10,4 @@ backend/.env.example
 *__init__.py
 *.json
 *.svg
+backend/.venvn/bin/python
