@@ -207,9 +207,9 @@ export default function SearchPage() {
       dataIndex: 'title',
       render: (v: string | null, p) => (
         <div className="min-w-0">
-          <Typography.Text ellipsis={{ tooltip: v }} className="block">
+          <Typography.Paragraph ellipsis={{ rows: 2, tooltip: v || p.name }} className="!mb-0">
             {v || p.name || <Typography.Text type="secondary">Untitled</Typography.Text>}
-          </Typography.Text>
+          </Typography.Paragraph>
           <div className="mt-1 flex flex-wrap gap-y-1">
             {splitList(p.data_types).map((t) => (
               <Tag key={t} color="blue" className="!text-xs">{t}</Tag>
@@ -218,7 +218,17 @@ export default function SearchPage() {
         </div>
       ),
     },
-    { title: 'Organism', dataIndex: 'organism_name', width: 180, ellipsis: true, ...sortable('organism') },
+    {
+      title: 'Organism',
+      dataIndex: 'organism_name',
+      width: 160,
+      ...sortable('organism'),
+      render: (v: string | null) => (
+        <Typography.Paragraph ellipsis={{ rows: 2, tooltip: v }} className="!mb-0">
+          {v}
+        </Typography.Paragraph>
+      ),
+    },
     {
       title: 'Experiments',
       dataIndex: 'n_experiments',
@@ -228,7 +238,7 @@ export default function SearchPage() {
       render: (v: number | null) => v?.toLocaleString(),
     },
     { title: 'Publications', dataIndex: 'publication_count', width: 130, align: 'right', ...sortable('publications') },
-    { title: 'Released', dataIndex: 'project_release_date', width: 120, ...sortable('release') },
+    { title: 'Released', dataIndex: 'project_release_date', width: 112, ...sortable('release') },
   ]
 
   const onTableChange: TableProps<Bioproject>['onChange'] = (_pagination, _filters, sorter, extra) => {
@@ -266,9 +276,9 @@ export default function SearchPage() {
   const panel = <FilterPanel values={draft} onChange={(u) => setDraft((d) => applyUpdate(d, u))} />
 
   return (
-    <div className="mx-auto flex max-w-[1600px] gap-6 px-4 py-6">
+    <div className="mx-auto flex max-w-[1920px] gap-6 px-4 py-6">
       {isDesktop && (
-        <aside className="w-80 shrink-0">
+        <aside className="w-72 shrink-0">
           <div className="sticky top-4 flex max-h-[calc(100vh-2rem)] flex-col rounded-lg bg-white">
             <div className="px-4 pb-1 pt-3 font-semibold">Filters</div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2">{panel}</div>
