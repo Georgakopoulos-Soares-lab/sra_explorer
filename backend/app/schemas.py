@@ -66,3 +66,20 @@ class SraMetadataOut(BaseModel):
     bioproject: Optional[str] = None
     library_name: Optional[str] = None
     geo_loc_name_country_calc: Optional[str] = None
+
+
+class SearchResults(BaseModel):
+    total: int
+    items: list[BioprojectOut]
+
+
+class FacetValue(BaseModel):
+    value: str
+    count: int
+
+
+class Stats(BaseModel):
+    bioprojects: int
+    studies: int
+    organisms: int
+    runs: int

@@ -1,4 +1,5 @@
 import os
+import threading
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -7,13 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import models, schemas
+from . import models, schemas, search
 from .database import Base, engine, get_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Only creates tables that don't exist yet; never alters loaded data.
     Base.metadata.create_all(bind=engine)
+    threading.Thread(target=search.warm_cache, daemon=True).start()
     yield
 
 
@@ -27,6 +29,8 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+app.include_router(search.router)
 
 
 @app.get("/health")
