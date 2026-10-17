@@ -49,7 +49,7 @@ cd backend
 .venv/bin/uvicorn app.main:app --reload
 ```
 
-The backend connects to `postgresql+psycopg://postgres:postgres@localhost:5432/mydb` by default. To use a different database, set `DATABASE_URL` before starting. For example, to load it from `backend/.env`:
+The backend connects to `postgresql+psycopg://postgres:postgres@localhost:5432/postgres` by default. To use a different database, set `DATABASE_URL` before starting. For example, to load it from `backend/.env`:
 
 ```bash
 set -a; source .env; set +a
@@ -93,8 +93,69 @@ Backend environment variables:
 
 | Variable       | Default                                                     | Purpose                                     |
 | -------------- | ----------------------------------------------------------- | ------------------------------------------- |
-| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/mydb` | Database connection string                  |
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/postgres` | Database connection string                  |
 | `CORS_ORIGINS` | `http://localhost:5173`                                     | Comma-separated origins allowed to call the API directly |
+
+## Pages
+
+| Page   | URL       | What it shows                                                        |
+| ------ | --------- | -------------------------------------------------------------------- |
+| Home   | `/`       | What the app does, database counts, how to cite, data sources        |
+| Search | `/search` | Filters for projects and runs, and a results table with links to NCBI |
+
+The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results.
+
+The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_publications=true`), so it can be bookmarked or shared, and the back button returns to the previous search.
+
+The text box at the top of the search page is for semantic search, which isn't built yet. What you type is kept in the URL as `q` but is not sent to the backend.
+
+### Setting the DOI
+
+When the paper is published, fill in `doi` and `citation` in `frontend/src/config.ts`. The home page then shows the DOI as a link and the citation with a copy button.
+
+## Search API
+
+The search page uses these endpoints, defined in `backend/app/search.py`:
+
+| Endpoint                       | Purpose                                                              |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `GET /search/latest`           | The 100 most recently released projects, shown before any search    |
+| `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count                  |
+| `GET /search/facets/{field}`   | Dropdown options with counts for one filter                          |
+| `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism and sequencing center |
+| `GET /search/stats`            | Counts shown on the home page                                         |
+
+All filter parameters are listed at <http://localhost:8000/docs>. Within one filter, several values match any of them. Different filters must all match.
+
+Dropdown and type-ahead values are cached in the API process for an hour. Empty results aren't cached, so values appear as soon as data is loaded.
+
+### Database setup for search
+
+Create the search index once, so the search page's first view loads in milliseconds:
+
+```bash
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/search_indexes.sql
+```
+
+### Run filters need the `study_facets` view
+
+Run filters (assay type, platform, sample country, and so on) read from `study_facets`, a materialized view with one row per SRA study that summarises its runs. Without it, every run filter scans the whole `sra_metadata` table, which takes one to two minutes per search on the full data.
+
+Create it once after loading `sra_metadata` (takes a few minutes):
+
+```bash
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/study_facets.sql
+```
+
+After loading new data into `sra_metadata`, refresh it:
+
+```bash
+docker exec sra_explorer_dev psql -U postgres -d postgres -c "REFRESH MATERIALIZED VIEW CONCURRENTLY study_facets"
+```
+
+The API detects the view automatically (it checks once a minute), so no restart is needed. Replace `-d postgres` with your database name if you use a different one.
+
+A project matches a run filter when any of its runs has a selected value. With several run filters, each can be met by a different run of the same project. The run release date filter matches projects whose runs were released within the range.
 
 ## Production build of the frontend
 
