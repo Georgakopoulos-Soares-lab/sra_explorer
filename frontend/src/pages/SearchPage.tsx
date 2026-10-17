@@ -1,8 +1,10 @@
-import { FilterOutlined, SearchOutlined } from '@ant-design/icons'
-import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Table, Tag, Typography } from 'antd'
+import { CloudDownloadOutlined, ExportOutlined, FilterOutlined, SearchOutlined } from '@ant-design/icons'
+import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Spin, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType, TableProps } from 'antd'
 import { useEffect, useState } from 'react'
 import { api, type Bioproject, type SearchResults } from '../api'
+import ExternalLink from '../components/ExternalLink'
+import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
 import FilterPanel from '../search/FilterPanel'
 import { DEFAULT_SORT, type SortKey } from '../search/filters'
@@ -16,15 +18,58 @@ import {
 } from '../search/useSearchState'
 
 const NCBI = 'https://www.ncbi.nlm.nih.gov'
+const ENA = 'https://www.ebi.ac.uk/ena/browser/view'
 const LATEST_COUNT = 100
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
 
-// stopPropagation so clicking a link doesn't also expand the row.
-const external = (href: string, text: string) => (
-  <a href={href} target="_blank" rel="noreferrer" className="font-mono" onClick={(e) => e.stopPropagation()}>
-    {text}
-  </a>
-)
+// Asks ENA (from the browser) how many runs the study has, and links to the
+// files page. The files themselves are never listed here: a study can have
+// thousands of runs.
+function FilesSummary({ study }: { study: string }) {
+  const [result, setResult] = useState<{ count?: number; error?: string }>()
+
+  useEffect(() => {
+    let active = true
+    countRuns(study)
+      .then((count) => active && setResult({ count }))
+      .catch((err: Error) => active && setResult({ error: err.message }))
+    return () => {
+      active = false
+    }
+  }, [study])
+
+  const text = !result
+    ? 'Checking ENA for runs…'
+    : result.error
+      ? `Couldn't reach ENA: ${result.error}`
+      : result.count === 0
+        ? 'ENA has no runs for this study yet.'
+        : `${result.count!.toLocaleString()} run${result.count === 1 ? '' : 's'} in ENA, with FASTQ download links.`
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+      <CloudDownloadOutlined className="text-lg text-blue-600" />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">Sequencing files</div>
+        <Typography.Text type={result?.error ? 'danger' : 'secondary'} className="text-sm">
+          {!result && <Spin size="small" className="mr-2" />}
+          {text}
+        </Typography.Text>
+      </div>
+      <Button
+        type="primary"
+        disabled={!result?.count}
+        href={`/files/${encodeURIComponent(study)}`}
+        target="_blank"
+        rel="noreferrer"
+        icon={<ExportOutlined />}
+        iconPlacement="end"
+      >
+        View files
+      </Button>
+    </div>
+  )
+}
 
 function ProjectDetails({ project: p }: { project: Bioproject }) {
   const items = [
@@ -51,6 +96,7 @@ function ProjectDetails({ project: p }: { project: Bioproject }) {
           items={items.map((i) => ({ key: i.label, label: i.label, children: i.value }))}
         />
       )}
+      <FilesSummary study={p.sra_study} />
     </div>
   )
 }
@@ -149,8 +195,10 @@ export default function SearchPage() {
       ...sortable('bioproject'),
       render: (v: string, p) => (
         <div className="flex flex-col">
-          {external(`${NCBI}/bioproject/${v}`, v)}
-          <span className="text-xs">{external(`${NCBI}/sra/?term=${p.sra_study}`, p.sra_study)}</span>
+          <ExternalLink href={`${ENA}/${v}`}>{v}</ExternalLink>
+          <span className="text-xs">
+            <ExternalLink href={`${NCBI}/sra/?term=${p.sra_study}`}>{p.sra_study}</ExternalLink>
+          </span>
         </div>
       ),
     },

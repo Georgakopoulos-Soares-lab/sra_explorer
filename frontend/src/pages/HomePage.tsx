@@ -27,7 +27,7 @@ const FEATURES: { icon: ReactNode; title: string; text: string; soon?: boolean }
   {
     icon: <LinkOutlined />,
     title: 'Go straight to the source',
-    text: 'Every result links to its NCBI BioProject and SRA study pages, so you can download the data from there.',
+    text: 'Every result links to its BioProject page in ENA and its SRA study page at NCBI, and lists its FASTQ files with direct download links from ENA.',
   },
   {
     icon: <SearchOutlined />,

@@ -1,30 +1,10 @@
-import { Layout, Menu, Tag } from 'antd'
-import { useEffect, useState } from 'react'
+import { Layout, Menu } from 'antd'
 import { Link, Outlet, useLocation } from 'react-router'
-import { api } from '../api'
 
 const NAV = [
   { key: '/', label: <Link to="/">Home</Link> },
   { key: '/search', label: <Link to="/search">Search</Link> },
 ]
-
-function ApiStatus() {
-  const [healthy, setHealthy] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    api
-      .health(controller.signal)
-      .then(() => setHealthy(true))
-      .catch(() => {
-        if (!controller.signal.aborted) setHealthy(false)
-      })
-    return () => controller.abort()
-  }, [])
-
-  if (healthy === null) return <Tag>Checking API…</Tag>
-  return healthy ? <Tag color="success">API connected</Tag> : <Tag color="error">API unreachable</Tag>
-}
 
 export default function AppLayout() {
   const { pathname } = useLocation()
@@ -38,13 +18,11 @@ export default function AppLayout() {
         <Menu
           theme="dark"
           mode="horizontal"
-          selectedKeys={[pathname]}
+          // The files page is part of searching.
+          selectedKeys={[pathname.startsWith('/files') ? '/search' : pathname]}
           items={NAV}
           className="min-w-0 flex-1"
         />
-        <span className="hidden sm:inline">
-          <ApiStatus />
-        </span>
       </Layout.Header>
 
       <Layout.Content>

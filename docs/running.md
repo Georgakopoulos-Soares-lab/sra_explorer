@@ -76,7 +76,7 @@ cd frontend
 npm run dev
 ```
 
-Open <http://localhost:5173>. The header shows **API connected** when the frontend can reach the backend.
+Open <http://localhost:5173>. The home page shows database counts when the frontend can reach the backend.
 
 In development, the frontend calls `/api/...` and Vite forwards those requests to the backend on port 8000, so no extra configuration is needed.
 
@@ -101,13 +101,22 @@ Backend environment variables:
 | Page   | URL       | What it shows                                                        |
 | ------ | --------- | -------------------------------------------------------------------- |
 | Home   | `/`       | What the app does, database counts, how to cite, data sources        |
-| Search | `/search` | Filters for projects and runs, and a results table with links to NCBI |
+| Search | `/search` | Filters for projects and runs, and a results table with links to ENA and NCBI |
+| Files  | `/files/<SRA study>` | A study's runs and their FASTQ download links, from ENA     |
 
 The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results.
 
 The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_publications=true`), so it can be bookmarked or shared, and the back button returns to the previous search.
 
 The text box at the top of the search page is for semantic search, which isn't built yet. What you type is kept in the URL as `q` but is not sent to the backend.
+
+### Sequencing files (ENA)
+
+Expanding a row on the search page shows how many runs the study has in ENA, with a **View files** button that opens the files page in a new tab. The files page lists each run with its experiment, sample, library (name, strategy, source, selection, layout), instrument, read and base counts, and its FASTQ links with sizes and MD5 checksums. Clicking a run shows its study, submission and other details. Runs can be narrowed by library strategy, source, selection, layout and instrument, or by text. **Copy links** and **Download** (link list, `wget` script, MD5 checksum file) cover the runs currently shown.
+
+All run and file data comes from the [ENA Portal API](https://www.ebi.ac.uk/ena/portal/api/) and is requested **by the user's browser, not the backend**, because ENA limits requests per client. The code is in `frontend/src/ena/api.ts`.
+
+ENA's file report can't be paged, so the files page loads the first 5,000 runs and offers the rest on request for studies up to 50,000 runs. For larger studies it links to ENA's full file report (TSV), which the browser downloads directly.
 
 ### Setting the DOI
 
