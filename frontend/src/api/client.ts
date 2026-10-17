@@ -1,6 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '')
 
-type QueryValue = string | number | boolean | null | undefined
+type QueryScalar = string | number | boolean | null | undefined
+type QueryValue = QueryScalar | QueryScalar[]
 
 export class ApiError extends Error {
   readonly status: number
@@ -20,9 +21,12 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
 
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
-    // Skip empty filters so the backend applies its defaults.
-    if (value === undefined || value === null || value === '') continue
-    params.append(key, String(value))
+    // Arrays become repeated params (?a=1&a=2), which FastAPI reads as a list.
+    for (const item of Array.isArray(value) ? value : [value]) {
+      // Skip empty filters so the backend applies its defaults.
+      if (item === undefined || item === null || item === '') continue
+      params.append(key, String(item))
+    }
   }
   const qs = params.toString()
   return qs ? `${url}?${qs}` : url

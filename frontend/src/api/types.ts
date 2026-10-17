@@ -82,3 +82,24 @@ export interface RunFilters extends Pagination {
 export interface HealthStatus {
   status: string
 }
+
+// Filter values for /search/bioprojects, keyed by backend parameter name.
+// List filters are string arrays; everything else is a single string.
+export type SearchParams = Record<string, string | string[]>
+
+export interface SearchResults {
+  total: number
+  items: Bioproject[]
+}
+
+export interface FacetValue {
+  value: string
+  count: number
+}
+
+export interface Stats {
+  bioprojects: number
+  studies: number
+  organisms: number
+  runs: number
+}

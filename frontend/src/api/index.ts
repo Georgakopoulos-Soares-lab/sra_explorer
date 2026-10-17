@@ -1,5 +1,15 @@
 import { apiGet } from './client'
-import type { Bioproject, BioprojectFilters, HealthStatus, RunFilters, SraRun } from './types'
+import type {
+  Bioproject,
+  BioprojectFilters,
+  FacetValue,
+  HealthStatus,
+  RunFilters,
+  SearchParams,
+  SearchResults,
+  SraRun,
+  Stats,
+} from './types'
 
 export { ApiError } from './client'
 export type * from './types'
@@ -19,4 +29,21 @@ export const api = {
 
   getRun: (acc: string, signal?: AbortSignal) =>
     apiGet<SraRun>(`/runs/${encodeURIComponent(acc)}`, undefined, { signal }),
+
+  searchBioprojects: (params: SearchParams, signal?: AbortSignal) =>
+    apiGet<SearchResults>('/search/bioprojects', params, { signal }),
+
+  // The most recently released projects (at most 100), without filters or a total count.
+  latestBioprojects: (limit = 100, signal?: AbortSignal) =>
+    apiGet<Bioproject[]>('/search/latest', { limit }, { signal }),
+
+  // Dropdown options, with counts, for one filter with a short list of values.
+  facet: (field: string, signal?: AbortSignal) =>
+    apiGet<FacetValue[]>(`/search/facets/${encodeURIComponent(field)}`, undefined, { signal }),
+
+  // Matching values for filters with too many values for a dropdown.
+  suggest: (field: string, q: string, signal?: AbortSignal) =>
+    apiGet<FacetValue[]>('/search/suggest', { field, q }, { signal }),
+
+  stats: (signal?: AbortSignal) => apiGet<Stats>('/search/stats', undefined, { signal }),
 }
