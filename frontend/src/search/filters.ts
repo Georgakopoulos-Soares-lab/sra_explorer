@@ -118,3 +118,14 @@ export const LIST_KEYS = new Set(
   ALL_FILTERS.filter((f) => f.kind === 'select' || f.kind === 'suggest').map((f) => f.key),
 )
 export const FILTER_PARAM_KEYS = ALL_FILTERS.flatMap(paramKeys)
+
+// BioProject (PRJNA/PRJEB/PRJDB) and SRA study (SRP/ERP/DRP) accessions.
+const ACCESSION_RE = /^(PRJ(NA|EB|DB)\d+|[SED]RP\d+)$/i
+
+// The accessions in the search box text, or null when the text is something
+// else (left for semantic search). Accepts several, separated by spaces or commas.
+export function parseAccessions(text: string): string[] | null {
+  const tokens = text.split(/[\s,;]+/).filter(Boolean)
+  if (tokens.length === 0 || !tokens.every((t) => ACCESSION_RE.test(t))) return null
+  return [...new Set(tokens.map((t) => t.toUpperCase()))]
+}

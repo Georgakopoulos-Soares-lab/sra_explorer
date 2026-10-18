@@ -108,7 +108,7 @@ The search page opens with the 100 most recently released BioProjects, which loa
 
 The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_publications=true`), so it can be bookmarked or shared, and the back button returns to the previous search.
 
-The text box at the top of the search page is for semantic search, which isn't built yet. What you type is kept in the URL as `q` but is not sent to the backend.
+The text box at the top of the search page finds projects by accession: type one or more BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, separated by spaces or commas, and click **Search**. They combine with any filters. Other text is for semantic search, which isn't built yet: it's kept in the URL as `q` but not sent to the backend.
 
 ### Sequencing files (ENA)
 

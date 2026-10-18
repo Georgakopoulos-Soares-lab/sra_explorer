@@ -43,15 +43,31 @@ function chipsFor(values: FilterValues): Chip[] {
   return chips
 }
 
-export default function ActiveFilters({ values, onChange, onClear }: {
+export default function ActiveFilters({ values, accessions = [], onChange, onRemoveAccession, onClear }: {
   values: FilterValues
+  // Accessions typed in the search box, shown as chips before the filters.
+  accessions?: string[]
   onChange: (update: ParamUpdate) => void
+  onRemoveAccession?: (accession: string) => void
   onClear: () => void
 }) {
   const chips = chipsFor(values)
-  if (chips.length === 0) return null
+  if (chips.length === 0 && accessions.length === 0) return null
   return (
     <div className="mb-3 flex flex-wrap items-center gap-y-1">
+      {accessions.map((acc) => (
+        <Tag
+          key={`accession=${acc}`}
+          color="blue"
+          closable
+          onClose={(e) => {
+            e.preventDefault()
+            onRemoveAccession?.(acc)
+          }}
+        >
+          Accession: {acc}
+        </Tag>
+      ))}
       {chips.map((chip) => (
         <Tag
           key={chip.id}

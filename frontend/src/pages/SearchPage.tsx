@@ -7,6 +7,8 @@ import ExternalLink from '../components/ExternalLink'
 import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
 import FilterPanel from '../search/FilterPanel'
+import Publications from '../search/Publications'
+import { projectPublications } from '../search/parsePublications'
 import { DEFAULT_SORT, type SortKey } from '../search/filters'
 import {
   applyUpdate,
@@ -72,6 +74,7 @@ function FilesSummary({ study }: { study: string }) {
 }
 
 function ProjectDetails({ project: p }: { project: Bioproject }) {
+  const publications = projectPublications(p)
   const items = [
     { label: 'Organization', value: [p.organization, p.organization_country].filter(Boolean).join(', ') },
     { label: 'Relevance', value: p.relevance },
@@ -80,8 +83,18 @@ function ProjectDetails({ project: p }: { project: Bioproject }) {
     { label: 'Access', value: p.access },
     { label: 'Submitted', value: p.submitted_date },
     { label: 'Last updated', value: p.last_update_date },
-    { label: 'GEO', value: p.geo_accessions },
-    { label: 'Journals', value: p.journals },
+    {
+      label: 'GEO',
+      value: p.geo_accessions && (
+        <span className="inline-flex flex-wrap gap-x-3">
+          {splitList(p.geo_accessions).map((gse) => (
+            <ExternalLink key={gse} href={`${NCBI}/geo/query/acc.cgi?acc=${encodeURIComponent(gse)}`}>
+              {gse}
+            </ExternalLink>
+          ))}
+        </span>
+      ),
+    },
   ].filter((i) => i.value)
 
   return (
@@ -95,6 +108,14 @@ function ProjectDetails({ project: p }: { project: Bioproject }) {
           column={{ xs: 1, md: 2, xl: 3 }}
           items={items.map((i) => ({ key: i.label, label: i.label, children: i.value }))}
         />
+      )}
+      {publications.length > 0 && (
+        <div>
+          <div className="mb-1 font-medium">
+            Publications <span className="font-normal text-gray-500">({publications.length})</span>
+          </div>
+          <Publications items={publications} />
+        </div>
       )}
       <FilesSummary study={p.sra_study} />
     </div>
@@ -124,7 +145,7 @@ export default function SearchPage() {
 
   // With no filters applied, the page shows the latest projects instead of
   // searching the whole table, and pages and sorts nothing on the server.
-  const showLatest = Object.keys(applied).length === 0
+  const showLatest = Object.keys(applied).length === 0 && !state.accessions
 
   // The latest response, tagged with the request it answers, so a stale
   // response never shows as current.
@@ -253,9 +274,11 @@ export default function SearchPage() {
     ? ' '
     : error
       ? 'Search failed'
-      : !showLatest
-        ? 'No projects match these filters'
-        : 'The database has no projects yet. Load data with the scripts in Automations/ (see docs/running.md).'
+      : state.accessions
+        ? `No project in the database has the accession ${state.accessions.join(', ')}`
+        : !showLatest
+          ? 'No projects match these filters'
+          : 'The database has no projects yet. Load data with the scripts in Automations/ (see docs/running.md).'
 
   const panelFooter = (
     <div className="flex flex-col gap-2">
@@ -293,7 +316,7 @@ export default function SearchPage() {
             size="large"
             allowClear
             prefix={<SearchOutlined className="text-gray-400" />}
-            placeholder="Describe the data you're looking for, e.g. single-cell RNA-seq of human liver"
+            placeholder="BioProject or SRA study accession (e.g. PRJNA169753, SRP079428), or describe the data"
             value={queryDraft}
             onChange={(e) => setQueryDraft(e.target.value)}
             onPressEnter={runSearch}
@@ -304,9 +327,22 @@ export default function SearchPage() {
             </Button>
           </Badge>
         </div>
-        <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
-          <Tag color="gold" className="!m-0">Coming soon</Tag>
-          Semantic search isn't connected yet. Results use the filters only.
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+          {appliedQuery && !state.accessions ? (
+            <Typography.Text type="warning" className="text-xs">
+              “{appliedQuery}” isn't a BioProject or SRA study accession. Searching by description is coming
+              soon, so results use the filters only.
+            </Typography.Text>
+          ) : (
+            <>
+              <span>
+                Enter BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, several
+                separated by spaces.
+              </span>
+              <Tag color="gold" className="!m-0">Coming soon</Tag>
+              <span>Searching by description.</span>
+            </>
+          )}
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -321,12 +357,22 @@ export default function SearchPage() {
             {showLatest
               ? `Showing the ${LATEST_COUNT} most recently released BioProjects. Choose filters and click Search to search all projects.`
               : results
-                ? `${results.total.toLocaleString()} projects`
+                ? `${results.total.toLocaleString()} project${results.total === 1 ? '' : 's'}`
                 : ' '}
           </span>
         </div>
 
-        <ActiveFilters values={applied} onChange={removeApplied} onClear={reset} />
+        <ActiveFilters
+          values={applied}
+          accessions={state.accessions ?? []}
+          onChange={removeApplied}
+          onRemoveAccession={(acc) => {
+            const rest = state.accessions!.filter((a) => a !== acc).join(' ')
+            setQueryDraft(rest)
+            state.update({ q: rest || null })
+          }}
+          onClear={reset}
+        />
 
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}
 

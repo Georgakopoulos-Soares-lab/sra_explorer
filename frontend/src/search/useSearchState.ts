@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import type { SearchParams } from '../api'
-import { DEFAULT_SORT, FILTER_PARAM_KEYS, LIST_KEYS, SORT_KEYS } from './filters'
+import { DEFAULT_SORT, FILTER_PARAM_KEYS, LIST_KEYS, parseAccessions, SORT_KEYS } from './filters'
 
 export const PAGE_SIZES = [10, 25, 50, 100]
 const DEFAULT_PAGE_SIZE = 25
@@ -52,6 +52,7 @@ export function useSearchState() {
   const sizeParam = Number(params.get('size'))
   const pageSize = PAGE_SIZES.includes(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE
   const query = params.get('q') ?? ''
+  const accessions = useMemo(() => parseAccessions(query), [query])
 
   const update = (changes: ParamUpdate, { keepPage = false } = {}) => {
     setParams((prev) => {
@@ -75,16 +76,17 @@ export function useSearchState() {
       q: q.trim() || null,
     })
 
-  // What the backend receives. The text query is left out until semantic
-  // search exists on the backend.
+  // What the backend receives. Accessions typed in the search box are sent
+  // as a filter; other text is left out until semantic search exists.
   const apiParams = useMemo<SearchParams>(
     () => ({
       ...values,
+      ...(accessions ? { accession: accessions } : {}),
       sort,
       limit: String(pageSize),
       offset: String((page - 1) * pageSize),
     }),
-    [values, sort, page, pageSize],
+    [values, accessions, sort, page, pageSize],
   )
 
   return {
@@ -93,6 +95,7 @@ export function useSearchState() {
     page,
     pageSize,
     query,
+    accessions,
     apiParams,
     update,
     apply,

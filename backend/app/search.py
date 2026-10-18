@@ -15,7 +15,7 @@ from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Date, MetaData, Table, and_, case, exists, func, select, text, true
+from sqlalchemy import Column, Date, MetaData, Table, and_, case, exists, func, or_, select, text, true
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import Text
@@ -107,6 +107,9 @@ SORTS = {
 
 
 class SearchFilters(BaseModel):
+    # BioProject (PRJNA…) or SRA study (SRP…) accessions; a project matches either.
+    accession: list[str] = Field(default_factory=list)
+
     organism: list[str] = Field(default_factory=list)
     supergroup: list[str] = Field(default_factory=list)
     data_types: list[str] = Field(default_factory=list)
@@ -161,6 +164,10 @@ def split_values(column):
 
 def build_conditions(f: SearchFilters) -> list:
     conditions = []
+
+    if f.accession:
+        accessions = [a.strip().upper() for a in f.accession if a.strip()]
+        conditions.append(or_(B.bioproject.in_(accessions), B.sra_study.in_(accessions)))
 
     for name, (column, multivalue) in PROJECT_FIELDS.items():
         values = getattr(f, name)
