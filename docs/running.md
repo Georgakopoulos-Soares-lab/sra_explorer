@@ -95,6 +95,8 @@ Backend environment variables:
 | -------------- | ----------------------------------------------------------- | ------------------------------------------- |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/postgres` | Database connection string                  |
 | `CORS_ORIGINS` | `http://localhost:5173`                                     | Comma-separated origins allowed to call the API directly |
+| `PUBLIC_API_WINDOW_SECONDS` | `5` | Public API rate limit: one request per this many seconds per IP |
+| `TRUST_FORWARDED_FOR` | `false` | Set to `true` behind a reverse proxy you control, so the rate limit uses the client IP from `X-Forwarded-For` |
 
 ## Pages
 
@@ -122,9 +124,15 @@ ENA's file report can't be paged, so the files page loads the first 5,000 runs a
 
 When the paper is published, fill in `doi` and `citation` in `frontend/src/config.ts`. The home page then shows the DOI as a link and the citation with a copy button.
 
+## Public API
+
+A rate-limited public API for scripts and other tools is served under `/v1` (code in `backend/app/public_api.py`). See [api.md](api.md) for how to use it.
+
+The rate limit is kept in the API process's memory. If you run several API workers or servers, each keeps its own count, so the effective limit multiplies. A single limit across them would need a shared store such as Redis.
+
 ## Search API
 
-The search page uses these endpoints, defined in `backend/app/search.py`:
+The website's search page uses these endpoints, defined in `backend/app/search.py`. They aren't rate-limited, because the page calls several at once; scripts should use the public API instead.
 
 | Endpoint                       | Purpose                                                              |
 | ------------------------------ | -------------------------------------------------------------------- |

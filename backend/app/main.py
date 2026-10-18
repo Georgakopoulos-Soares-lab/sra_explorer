@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import models, schemas, search
+from . import models, public_api, schemas, search
 from .database import Base, engine, get_db
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(search.router)
+app.include_router(public_api.router)
 
 
 @app.get("/health")

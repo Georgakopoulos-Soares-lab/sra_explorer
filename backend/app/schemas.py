@@ -83,3 +83,30 @@ class Stats(BaseModel):
     studies: int
     organisms: int
     runs: int
+
+
+# Public API (/v1)
+
+
+class PublicSearchResults(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    results: list[BioprojectOut]
+
+
+class PublicLookupResults(BaseModel):
+    results: list[BioprojectOut]
+
+
+class FilterInfo(BaseModel):
+    name: str
+    kind: str
+    description: str
+    values: Optional[str] = None
+
+
+class ApiInfo(BaseModel):
+    version: str
+    rate_limit: str
+    endpoints: dict[str, str]
