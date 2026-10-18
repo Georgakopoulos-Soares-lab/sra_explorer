@@ -4,6 +4,7 @@ import { Link, Outlet, useLocation } from 'react-router'
 const NAV = [
   { key: '/', label: <Link to="/">Home</Link> },
   { key: '/search', label: <Link to="/search">Search</Link> },
+  { key: '/docs/api', label: <Link to="/docs/api">API</Link> },
 ]
 
 export default function AppLayout() {

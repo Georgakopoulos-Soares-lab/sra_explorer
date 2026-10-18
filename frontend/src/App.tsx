@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router'
 import AppLayout from './components/AppLayout'
+import ApiDocsPage from './pages/ApiDocsPage'
 import FilesPage from './pages/FilesPage'
 import HomePage from './pages/HomePage'
 import SearchPage from './pages/SearchPage'
@@ -12,6 +13,9 @@ function App() {
           <Route index element={<HomePage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="files/:study" element={<FilesPage />} />
+          {/* Not under /api…: the dev server (and likely a production proxy)
+              forwards every path starting with /api to the backend. */}
+          <Route path="docs/api" element={<ApiDocsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

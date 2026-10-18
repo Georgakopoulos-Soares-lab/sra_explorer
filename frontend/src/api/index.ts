@@ -4,6 +4,7 @@ import type {
   BioprojectFilters,
   FacetValue,
   HealthStatus,
+  PublicApiDocs,
   RunFilters,
   SearchParams,
   SearchResults,
@@ -11,7 +12,7 @@ import type {
   Stats,
 } from './types'
 
-export { ApiError } from './client'
+export { API_BASE_URL, ApiError } from './client'
 export type * from './types'
 
 export const api = {
@@ -46,4 +47,7 @@ export const api = {
     apiGet<FacetValue[]>('/search/suggest', { field, q }, { signal }),
 
   stats: (signal?: AbortSignal) => apiGet<Stats>('/search/stats', undefined, { signal }),
+
+  // The public API's rate limit and parameters, for the API documentation page.
+  publicApiDocs: (signal?: AbortSignal) => apiGet<PublicApiDocs>('/search/public-api-docs', undefined, { signal }),
 }

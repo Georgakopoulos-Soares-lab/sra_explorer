@@ -110,3 +110,8 @@ class ApiInfo(BaseModel):
     version: str
     rate_limit: str
     endpoints: dict[str, str]
+
+
+class PublicApiDocs(BaseModel):
+    rate_limit_seconds: float
+    filters: list[FilterInfo]

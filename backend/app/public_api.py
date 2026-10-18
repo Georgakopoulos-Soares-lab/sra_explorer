@@ -29,6 +29,10 @@ from .search import (
 
 router = APIRouter(prefix="/v1", tags=["Public API v1"], dependencies=[Depends(rate_limit)])
 
+# For the website's API documentation page. Not rate-limited, so reading the
+# docs doesn't use up the visitor's allowance for trying the API.
+docs_router = APIRouter(prefix="/search", tags=["search"])
+
 ACCESSION_PATTERN = r"^(PRJ(NA|EB|DB)\d+|[SED]RP\d+)$"
 
 # What /v1/filters reports, so clients can discover the parameters of /v1/projects.
@@ -182,3 +186,8 @@ def filter_values(
     needle = (q or "").strip().lower()
     matches = ({"value": v, "count": n} for v, n in distinct_values(name) if needle in v.lower())
     return [m for _, m in zip(range(limit), matches)]
+
+
+@docs_router.get("/public-api-docs", response_model=schemas.PublicApiDocs, include_in_schema=False)
+def public_api_docs():
+    return {"rate_limit_seconds": WINDOW_SECONDS, "filters": describe_filters()}

@@ -103,3 +103,16 @@ export interface Stats {
   organisms: number
   runs: number
 }
+
+// One search parameter of the public API (/v1/projects).
+export interface PublicApiFilter {
+  name: string
+  kind: string
+  description: string
+  values: string | null
+}
+
+export interface PublicApiDocs {
+  rate_limit_seconds: number
+  filters: PublicApiFilter[]
+}

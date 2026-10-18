@@ -105,6 +105,7 @@ Backend environment variables:
 | Home   | `/`       | What the app does, database counts, how to cite, data sources        |
 | Search | `/search` | Filters for projects and runs, and a results table with links to ENA and NCBI |
 | Files  | `/files/<SRA study>` | A study's runs and their FASTQ download links, from ENA     |
+| API    | `/docs/api` | How to use the public API, with Python examples                  |
 
 The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results.
 
@@ -126,7 +127,7 @@ When the paper is published, fill in `doi` and `citation` in `frontend/src/confi
 
 ## Public API
 
-A rate-limited public API for scripts and other tools is served under `/v1` (code in `backend/app/public_api.py`). See [api.md](api.md) for how to use it.
+A rate-limited public API for scripts and other tools is served under `/v1` (code in `backend/app/public_api.py`). The website's **API** page (`/docs/api`) documents it for users; [api.md](api.md) has the same in Markdown.
 
 The rate limit is kept in the API process's memory. If you run several API workers or servers, each keeps its own count, so the effective limit multiplies. A single limit across them would need a shared store such as Redis.
 

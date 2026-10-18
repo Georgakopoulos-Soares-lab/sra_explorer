@@ -32,6 +32,7 @@ app.add_middleware(
 
 app.include_router(search.router)
 app.include_router(public_api.router)
+app.include_router(public_api.docs_router)
 
 
 @app.get("/health")
