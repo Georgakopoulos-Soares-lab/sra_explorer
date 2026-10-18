@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { api, type Bioproject } from '../api'
 import ExternalLink from '../components/ExternalLink'
+import GeoText from '../components/GeoText'
 import { countRuns, enaRunUrl, fetchRuns, formatBases, formatBytes, fullReportUrl, type EnaRun } from '../ena/api'
 
 // Runs loaded on first view. ENA can't page through a study, so larger studies
@@ -56,10 +57,10 @@ function FilesCell({ run }: { run: EnaRun }) {
   )
 }
 
-const secondary = (text: string, rows = 1) =>
+const secondary = (text: string, rows = 1, linkGeo = false) =>
   text ? (
     <Typography.Paragraph type="secondary" ellipsis={{ rows, tooltip: text }} className="!mb-0 text-xs">
-      {text}
+      {linkGeo ? <GeoText text={text} /> : text}
     </Typography.Paragraph>
   ) : null
 
@@ -94,10 +95,10 @@ const columns: TableColumnsType<EnaRun> = [
         {v && <ExternalLink href={enaRunUrl(v)}>{v}</ExternalLink>}
         {r.sample_title && (
           <Typography.Paragraph ellipsis={{ rows: 2, tooltip: r.sample_title }} className="!mb-0 text-xs">
-            {r.sample_title}
+            <GeoText text={r.sample_title} />
           </Typography.Paragraph>
         )}
-        {r.sample_alias !== v && r.sample_alias !== r.sample_title && secondary(r.sample_alias)}
+        {r.sample_alias !== v && r.sample_alias !== r.sample_title && secondary(r.sample_alias, 1, true)}
       </div>
     ),
   },
@@ -162,7 +163,7 @@ function RunDetails({ run: r }: { run: EnaRun }) {
         <ExternalLink href={enaRunUrl(r.submission_accession)}>{r.submission_accession}</ExternalLink>
       ),
     },
-    { label: 'Sample title', value: r.sample_title },
+    { label: 'Sample title', value: r.sample_title && <GeoText text={r.sample_title} /> },
     { label: 'Run alias', value: r.run_alias },
     { label: 'Library name', value: r.library_name },
     {
