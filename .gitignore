@@ -11,3 +11,4 @@ backend/.env.example
 *.json
 *.svg
 backend/.venvn/bin/python
+/.venv
