@@ -1,19 +1,23 @@
 """
-Add a semantic-search embedding column to the `bioprojects` table (CPU, resumable).
+Build the `bioproject_embeddings` table for semantic search (CPU, resumable).
 
 Reads output/bioprojects.csv (written by create_tables.py), embeds the text of
 name + title + description + organism_name with the sentence-transformers model
 pritamdeka/BioBERT-mnli-snli-scinli-scitail-mednli-stsb, and writes
-output/bioprojects_embeddings.csv: the same columns plus a final `embedding`
-column in pgvector literal format ("[0.0123,-0.0456,...]").
+output/bioproject_embeddings.tsv with two columns:
+  bioproject  e.g. PRJNA559273
+  embedding   pgvector literal, e.g. [0.0123,-0.0456,...]
+Load it with output/bioproject_embeddings_schema.sql.
 
-Embeddings are L2-normalised, so cosine distance (<=>) and inner product (<#>)
-rank results identically. Rows with no text get an empty (NULL) embedding.
+One row per bioproject: bioprojects.csv repeats a project once per sra_study
+with identical text, so only the first occurrence is embedded. Projects with
+no text at all are skipped. Embeddings are L2-normalised, so cosine distance
+(<=>) and inner product (<#>) rank results identically.
 
-Resuming: rows are processed in chunks; after each chunk is flushed to disk a
-checkpoint (<output>.progress) records the rows done and the output size. If the
-script is killed, rerunning it truncates any half-written chunk and continues
-from the last checkpoint. Use --restart to start over.
+Resuming: input rows are processed in chunks; after each chunk is flushed to
+disk a checkpoint (<output>.progress) records the input rows consumed and the
+output size. If the script is killed, rerunning it truncates any half-written
+chunk and continues from the last checkpoint. Use --restart to start over.
 
 Setup (once): python3 -m venv .venv && .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu && .venv/bin/pip install sentence-transformers numpy
 
@@ -44,7 +48,7 @@ from sentence_transformers import SentenceTransformer
 
 BASE_DIR = Path(__file__).resolve().parent
 IN_CSV = BASE_DIR / "output" / "bioprojects.csv"
-OUT_CSV = BASE_DIR / "output" / "bioprojects_embeddings.csv"
+OUT_TSV = BASE_DIR / "output" / "bioproject_embeddings.tsv"
 
 MODEL_NAME = "pritamdeka/BioBERT-mnli-snli-scinli-scitail-mednli-stsb"
 EMBEDDING_DIM = 768
@@ -96,17 +100,19 @@ def save_checkpoint(progress_path, state):
 
 
 # ---------------------------------------------------------------- embedding
-def embed_chunk(model, rows, batch_size):
-    """Return the pgvector string (or "") for each row; duplicate texts embedded once."""
-    texts = [build_text(r) for r in rows]
-    unique = sorted({t for t in texts if t}, key=len)  # length-sorted -> less padding
-    if not unique:
-        return [""] * len(rows)
-    vecs = model.encode(unique, batch_size=batch_size, normalize_embeddings=True,
-                        convert_to_numpy=True, show_progress_bar=False).astype(np.float32)
+def embed_chunk(model, projects, batch_size):
+    """projects: [(bioproject, text)] -> [(bioproject, pgvector string)]."""
+    if not projects:
+        return []
+    order = sorted(range(len(projects)), key=lambda i: len(projects[i][1]))  # less padding
+    vecs = model.encode([projects[i][1] for i in order], batch_size=batch_size,
+                        normalize_embeddings=True, convert_to_numpy=True,
+                        show_progress_bar=False).astype(np.float32)
     assert vecs.shape[1] == EMBEDDING_DIM, vecs.shape
-    lookup = {t: to_pgvector(v) for t, v in zip(unique, vecs)}
-    return [lookup.get(t, "") for t in texts]
+    out = [None] * len(projects)
+    for i, vec in zip(order, vecs):
+        out[i] = (projects[i][0], to_pgvector(vec))
+    return out
 
 
 def format_eta(seconds):
@@ -117,8 +123,8 @@ def format_eta(seconds):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input", type=Path, default=IN_CSV)
-    parser.add_argument("--output", type=Path, default=OUT_CSV)
-    parser.add_argument("--chunk-size", type=int, default=2048, help="rows per checkpoint")
+    parser.add_argument("--output", type=Path, default=OUT_TSV)
+    parser.add_argument("--chunk-size", type=int, default=2048, help="input rows per checkpoint")
     parser.add_argument("--batch-size", type=int, default=32, help="texts per forward pass")
     parser.add_argument("--threads", type=int, default=os.cpu_count(), help="torch CPU threads")
     parser.add_argument("--max-seq-length", type=int, default=512,
@@ -131,7 +137,7 @@ def main():
     signature = input_signature(args.input)
     state = None if args.restart else load_checkpoint(progress_path, signature, args.max_seq_length)
     if state and state.get("done"):
-        print(f"{args.output} is already complete ({state['rows_done']:,} rows). "
+        print(f"{args.output} is already complete ({state['projects_written']:,} bioprojects). "
               f"Use --restart to rebuild it.")
         return
 
@@ -144,21 +150,21 @@ def main():
 
     with open(args.input, newline="", encoding="utf-8") as fin:
         reader = csv.DictReader(fin)
-        fieldnames = reader.fieldnames
+        seen = set()  # bioprojects already embedded (or skipped for having no text)
 
         if state:
             rows_done = state["rows_done"]
-            out = open(args.output, "r+", newline="", encoding="utf-8")
+            out = open(args.output, "r+", encoding="utf-8")
             out.truncate(state["output_bytes"])  # drop a half-written chunk, if any
             out.seek(state["output_bytes"])
             for _ in range(rows_done):
-                next(reader)
-            print(f"resuming after row {rows_done:,}", flush=True)
+                seen.add(next(reader)["bioproject"])
+            print(f"resuming after input row {rows_done:,}", flush=True)
         else:
             rows_done = 0
-            out = open(args.output, "w", newline="", encoding="utf-8")
-            csv.writer(out).writerow(fieldnames + ["embedding"])
-            state = {**signature, "max_seq_length": args.max_seq_length}
+            out = open(args.output, "w", encoding="utf-8")
+            out.write("bioproject\tembedding\n")
+            state = {**signature, "max_seq_length": args.max_seq_length, "projects_written": 0}
 
         total = state.get("total_rows")
         if total is None:  # count once; cheap next to the embedding itself
@@ -168,7 +174,6 @@ def main():
         if args.limit is not None:
             total = min(total, args.limit)
 
-        writer = csv.writer(out)
         t0, rows_at_start = time.time(), rows_done
         with out:
             while rows_done < total:
@@ -180,24 +185,35 @@ def main():
                 if not rows:
                     break
 
-                vectors = embed_chunk(model, rows, args.batch_size)
-                for row, vec in zip(rows, vectors):
-                    writer.writerow([row[c] for c in fieldnames] + [vec])
+                projects = []
+                for row in rows:
+                    bioproject = row["bioproject"]
+                    if bioproject in seen:
+                        continue
+                    seen.add(bioproject)
+                    text = build_text(row)
+                    if text:
+                        projects.append((bioproject, text))
+
+                for bioproject, vec in embed_chunk(model, projects, args.batch_size):
+                    out.write(f"{bioproject}\t{vec}\n")
                 out.flush()
                 os.fsync(out.fileno())
 
                 rows_done += len(rows)
-                state.update(rows_done=rows_done, output_bytes=out.tell())
+                state.update(rows_done=rows_done, output_bytes=out.tell(),
+                             projects_written=state["projects_written"] + len(projects))
                 save_checkpoint(progress_path, state)
 
                 rate = (rows_done - rows_at_start) / (time.time() - t0)
-                print(f"{rows_done:,}/{total:,} rows ({100 * rows_done / total:.1f}%), "
+                print(f"{rows_done:,}/{total:,} input rows ({100 * rows_done / total:.1f}%), "
+                      f"{state['projects_written']:,} bioprojects written, "
                       f"{rate:.1f} rows/s, ETA {format_eta((total - rows_done) / rate)}", flush=True)
 
     if rows_done >= state["total_rows"]:
         state["done"] = True
         save_checkpoint(progress_path, state)
-        print(f"done: wrote {args.output}", flush=True)
+        print(f"done: wrote {state['projects_written']:,} bioprojects to {args.output}", flush=True)
     else:
         print(f"stopped at row {rows_done:,} (--limit); rerun to continue", flush=True)
 
