@@ -11,3 +11,5 @@ backend/.env.example
 *.json
 *.svg
 backend/.venvn/bin/python
+/.venv
+Automations/output/bioproject_embeddings.tsv.progress
