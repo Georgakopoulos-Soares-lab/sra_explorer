@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Any, Optional
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import BigInteger, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -51,6 +52,21 @@ class Bioproject(Base):
     organization_country: Mapped[Optional[str]] = mapped_column(Text)
     access: Mapped[Optional[str]] = mapped_column(Text)
     parent_projects: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class BioprojectEmbedding(Base):
+    __tablename__ = "bioproject_embeddings"
+    __table_args__ = (
+        Index(
+            "bioproject_embeddings_embedding_idx",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    bioproject: Mapped[str] = mapped_column(Text, primary_key=True)
+    embedding: Mapped[Any] = mapped_column(Vector(768), nullable=False)
 
 
 class SraMetadata(Base):
