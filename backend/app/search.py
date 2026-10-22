@@ -4,23 +4,25 @@ Run filters use the study_facets materialized view (backend/sql/study_facets.sql
 when it exists, and fall back to querying sra_metadata directly, which is much
 slower on the full table.
 
-Semantic (free-text) search is not implemented yet; the frontend has the box
-but does not send the query.
+Semantic search (the q parameter) embeds the text with the model that built
+bioproject_embeddings (see embeddings.py) and keeps projects whose cosine
+similarity to it is at least SEMANTIC_MIN_SIMILARITY, most similar first.
 """
 
 import logging
+import os
 import time
 from datetime import date
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Date, MetaData, Table, and_, case, exists, func, or_, select, text, true
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import Text
 
-from . import models, schemas
+from . import embeddings, models, schemas
 from .database import engine, get_db
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -28,6 +30,15 @@ logger = logging.getLogger(__name__)
 
 B = models.Bioproject
 R = models.SraMetadata
+E = models.BioprojectEmbedding
+
+# Projects less similar than this to the search text are left out. On the
+# real data, relevant projects score about 0.55-0.85 and nonsense queries at
+# most about 0.55 (against very short titles).
+SEMANTIC_MIN_SIMILARITY = float(os.getenv("SEMANTIC_MIN_SIMILARITY", "0.5"))
+# The nearest projects found through the HNSW index, before filters and the
+# threshold are applied; at most 1000, the index's ef_search limit.
+SEMANTIC_CANDIDATES = 1000
 
 # Filter name -> (column, stores several values joined by "; ").
 PROJECT_FIELDS = {
@@ -158,6 +169,14 @@ class SearchFilters(BaseModel):
     offset: int = Field(0, ge=0)
 
 
+class SiteSearchFilters(SearchFilters):
+    """The website's search: the public filters plus free-text search."""
+
+    q: Optional[str] = Field(None, max_length=1000)
+    # Defaults to "relevance" with q, and to "release_desc" without.
+    sort: Optional[Literal[tuple(SORTS) + ("relevance",)]] = None  # type: ignore[valid-type]
+
+
 def split_values(column):
     return func.string_to_array(column, "; ", type_=ARRAY(Text))
 
@@ -231,19 +250,67 @@ def build_conditions(f: SearchFilters) -> list:
 
 @router.get("/bioprojects", response_model=schemas.SearchResults)
 def search_bioprojects(
-    filters: Annotated[SearchFilters, Query()],
+    filters: Annotated[SiteSearchFilters, Query()],
     db: Session = Depends(get_db),
 ):
     where = and_(true(), *build_conditions(filters))
+    q = (filters.q or "").strip()
+    if q:
+        return semantic_search(db, q, where, filters)
+
+    sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
     total = db.scalar(select(func.count()).select_from(B).where(where))
     stmt = (
         select(B)
         .where(where)
-        .order_by(SORTS[filters.sort], B.bioproject, B.sra_study)
+        .order_by(sort, B.bioproject, B.sra_study)
         .limit(filters.limit)
         .offset(filters.offset)
     )
     return {"total": total, "items": db.scalars(stmt).all()}
+
+
+def semantic_search(db: Session, q: str, where, filters: SiteSearchFilters) -> dict:
+    """Projects similar to q that also match the filters.
+
+    Only the SEMANTIC_CANDIDATES nearest projects are considered, so a broad
+    query reports at most that many results.
+    """
+    try:
+        query_vec = embeddings.embed(q)
+    except Exception:
+        logger.exception("Could not embed the search text")
+        raise HTTPException(status_code=503, detail="Searching by description is unavailable right now.")
+
+    # The ORDER BY ... LIMIT form lets Postgres use the HNSW index. ef_search
+    # must be at least the LIMIT for the index to return that many rows.
+    db.execute(text(f"SET LOCAL hnsw.ef_search = {SEMANTIC_CANDIDATES}"))
+    distance = E.embedding.cosine_distance(query_vec)
+    nearest = (
+        select(E.bioproject, distance.label("distance"))
+        .order_by(distance)
+        .limit(SEMANTIC_CANDIDATES)
+        .subquery()
+    )
+    # Vectors are normalised, so similarity = 1 - cosine distance.
+    similar = and_(where, nearest.c.distance <= 1 - SEMANTIC_MIN_SIMILARITY)
+    joined = B.__table__.join(nearest, nearest.c.bioproject == B.bioproject)
+
+    total = db.scalar(select(func.count()).select_from(joined).where(similar))
+    order = [nearest.c.distance] if filters.sort in (None, "relevance") else [SORTS[filters.sort]]
+    stmt = (
+        select(B, (1 - nearest.c.distance).label("similarity"))
+        .select_from(joined)
+        .where(similar)
+        .order_by(*order, B.bioproject, B.sra_study)
+        .limit(filters.limit)
+        .offset(filters.offset)
+    )
+    items = [
+        {**schemas.BioprojectOut.model_validate(p).model_dump(), "similarity": round(sim, 4)}
+        for p, sim in db.execute(stmt)
+    ]
+    return {"total": total, "items": items}
 
 
 @router.get("/latest", response_model=list[schemas.BioprojectOut])

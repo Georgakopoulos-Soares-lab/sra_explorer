@@ -68,9 +68,14 @@ class SraMetadataOut(BaseModel):
     geo_loc_name_country_calc: Optional[str] = None
 
 
+class SearchHit(BioprojectOut):
+    # Cosine similarity to the search text (0-1); only set for text searches.
+    similarity: Optional[float] = None
+
+
 class SearchResults(BaseModel):
     total: int
-    items: list[BioprojectOut]
+    items: list[SearchHit]
 
 
 class FacetValue(BaseModel):

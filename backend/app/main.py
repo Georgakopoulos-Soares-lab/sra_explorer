@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import models, public_api, schemas, search
+from . import embeddings, models, public_api, schemas, search
 from .database import Base, engine, get_db
 
 @asynccontextmanager
@@ -16,6 +16,7 @@ async def lifespan(app: FastAPI):
     # Only creates tables that don't exist yet; never alters loaded data.
     Base.metadata.create_all(bind=engine)
     threading.Thread(target=search.warm_cache, daemon=True).start()
+    threading.Thread(target=embeddings.warm_model, daemon=True).start()
     yield
 
 

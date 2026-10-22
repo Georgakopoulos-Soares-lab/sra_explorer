@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import type { SearchParams } from '../api'
-import { DEFAULT_SORT, FILTER_PARAM_KEYS, LIST_KEYS, parseAccessions, SORT_KEYS } from './filters'
+import { DEFAULT_SORT, FILTER_PARAM_KEYS, LIST_KEYS, parseAccessions, RELEVANCE_SORT, SORT_KEYS } from './filters'
 
 export const PAGE_SIZES = [10, 25, 50, 100]
 const DEFAULT_PAGE_SIZE = 25
@@ -46,13 +46,17 @@ export function useSearchState() {
     return out
   }, [params])
 
+  const query = params.get('q') ?? ''
+  const accessions = useMemo(() => parseAccessions(query), [query])
+  // Text that isn't accessions is searched by meaning (semantic search).
+  const semanticQuery = !accessions && query.trim() ? query.trim() : null
+
+  // Text searches are ordered most similar first unless a column is sorted.
   const sortParam = params.get('sort')
-  const sort = isValidSort(sortParam) ? sortParam! : DEFAULT_SORT
+  const sort = isValidSort(sortParam) ? sortParam! : semanticQuery ? RELEVANCE_SORT : DEFAULT_SORT
   const page = Math.max(1, Number(params.get('page')) || 1)
   const sizeParam = Number(params.get('size'))
   const pageSize = PAGE_SIZES.includes(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE
-  const query = params.get('q') ?? ''
-  const accessions = useMemo(() => parseAccessions(query), [query])
 
   const update = (changes: ParamUpdate, { keepPage = false } = {}) => {
     setParams((prev) => {
@@ -77,16 +81,17 @@ export function useSearchState() {
     })
 
   // What the backend receives. Accessions typed in the search box are sent
-  // as a filter; other text is left out until semantic search exists.
+  // as a filter; other text is sent as q for semantic search.
   const apiParams = useMemo<SearchParams>(
     () => ({
       ...values,
       ...(accessions ? { accession: accessions } : {}),
+      ...(semanticQuery ? { q: semanticQuery } : {}),
       sort,
       limit: String(pageSize),
       offset: String((page - 1) * pageSize),
     }),
-    [values, accessions, sort, page, pageSize],
+    [values, accessions, semanticQuery, sort, page, pageSize],
   )
 
   return {
@@ -96,12 +101,16 @@ export function useSearchState() {
     pageSize,
     query,
     accessions,
+    semanticQuery,
     apiParams,
     update,
     apply,
     clearFilters: () =>
       update({ ...Object.fromEntries(FILTER_PARAM_KEYS.map((k) => [k, null])), q: null, sort: null }),
-    setSort: (next: string | null) => update({ sort: next && next !== DEFAULT_SORT ? next : null }),
+    // null goes back to the default order. During a text search the default is
+    // relevance, so an explicit release_desc is kept in the URL.
+    setSort: (next: string | null) =>
+      update({ sort: next && (semanticQuery || next !== DEFAULT_SORT) ? next : null }),
     setPage: (nextPage: number, nextSize: number) =>
       nextSize !== pageSize
         ? update({ size: nextSize === DEFAULT_PAGE_SIZE ? null : String(nextSize) })

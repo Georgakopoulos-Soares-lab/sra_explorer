@@ -13,3 +13,4 @@ backend/.env.example
 backend/.venvn/bin/python
 /.venv
 Automations/output/bioproject_embeddings.tsv.progress
+.venv-x86

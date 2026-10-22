@@ -42,6 +42,10 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+The requirements include PyTorch and sentence-transformers for semantic search, which need torch 2.6 or newer. On an Apple Silicon Mac, create the venv with a native arm64 Python (for example `/usr/bin/python3`); an Intel (x86_64) Python only gets torch 2.2, which can't load the model. Check with `.venv/bin/python -c "import platform; print(platform.machine())"`, which should print `arm64`. On a Linux server without a GPU, install the CPU build of torch first to avoid downloading CUDA: `.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+
+The embedding model (`pritamdeka/BioBERT-mnli-snli-scinli-scitail-mednli-stsb`, about 440 MB) downloads from Hugging Face the first time the API starts and is cached in `~/.cache/huggingface`. The API loads it in the background at startup, so the first text search may wait a few seconds for it.
+
 Run the API:
 
 ```bash
@@ -97,6 +101,8 @@ Backend environment variables:
 | `CORS_ORIGINS` | `http://localhost:5173`                                     | Comma-separated origins allowed to call the API directly |
 | `PUBLIC_API_WINDOW_SECONDS` | `5` | Public API rate limit: one request per this many seconds per IP |
 | `TRUST_FORWARDED_FOR` | `false` | Set to `true` behind a reverse proxy you control, so the rate limit uses the client IP from `X-Forwarded-For` |
+| `SEMANTIC_MIN_SIMILARITY` | `0.5` | Text searches leave out projects whose cosine similarity to the text is below this |
+| `EMBEDDING_THREADS` | `4` | CPU threads used to embed search text |
 
 ## Pages
 
@@ -111,7 +117,9 @@ The search page opens with the 100 most recently released BioProjects, which loa
 
 The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_publications=true`), so it can be bookmarked or shared, and the back button returns to the previous search.
 
-The text box at the top of the search page finds projects by accession: type one or more BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, separated by spaces or commas, and click **Search**. They combine with any filters. Other text is for semantic search, which isn't built yet: it's kept in the URL as `q` but not sent to the backend.
+The text box at the top of the search page finds projects by accession: type one or more BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, separated by spaces or commas, and click **Search**. They combine with any filters.
+
+Any other text is a semantic search: it finds projects whose title, name, organism and description are similar in meaning to the text, using the embeddings in `bioproject_embeddings` (built by `Automations/create_embeddings.py`). The API embeds the text with the same model, then takes the 1,000 nearest projects from the HNSW index, applies the filters, and leaves out projects with a cosine similarity below `SEMANTIC_MIN_SIMILARITY`. Results are ordered most similar first, and a **Match** column shows each project's similarity. Clicking a column header sorts by that column instead; clicking it until the sort clears goes back to most similar first. Because only the 1,000 nearest projects are considered, a broad search reports at most 1,000 results.
 
 ### Sequencing files (ENA)
 
@@ -138,7 +146,7 @@ The website's search page uses these endpoints, defined in `backend/app/search.p
 | Endpoint                       | Purpose                                                              |
 | ------------------------------ | -------------------------------------------------------------------- |
 | `GET /search/latest`           | The 100 most recently released projects, shown before any search    |
-| `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count                  |
+| `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count. With `q`, a semantic search: results carry a `similarity` and sort by it (`sort=relevance`) unless another sort is given |
 | `GET /search/facets/{field}`   | Dropdown options with counts for one filter                          |
 | `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism and sequencing center |
 | `GET /search/stats`            | Counts shown on the home page                                         |

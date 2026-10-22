@@ -98,6 +98,8 @@ export const FILTER_SECTIONS: FilterSection[] = [
 export const SORT_KEYS = ['release', 'experiments', 'publications', 'bioproject', 'organism'] as const
 export type SortKey = (typeof SORT_KEYS)[number]
 export const DEFAULT_SORT = 'release_desc'
+// Most similar first; the default for text (semantic) searches.
+export const RELEVANCE_SORT = 'relevance'
 
 // The URL parameters each filter owns.
 export function paramKeys(def: FilterDef): string[] {

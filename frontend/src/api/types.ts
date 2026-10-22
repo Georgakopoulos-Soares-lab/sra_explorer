@@ -87,9 +87,14 @@ export interface HealthStatus {
 // List filters are string arrays; everything else is a single string.
 export type SearchParams = Record<string, string | string[]>
 
+export interface SearchHit extends Bioproject {
+  // Cosine similarity to the search text (0-1); only set for text searches.
+  similarity?: number | null
+}
+
 export interface SearchResults {
   total: number
-  items: Bioproject[]
+  items: SearchHit[]
 }
 
 export interface FacetValue {

@@ -2,14 +2,14 @@ import { CloudDownloadOutlined, ExportOutlined, FilterOutlined, SearchOutlined }
 import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Spin, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType, TableProps } from 'antd'
 import { useEffect, useState } from 'react'
-import { api, type Bioproject, type SearchResults } from '../api'
+import { api, type Bioproject, type SearchHit, type SearchResults } from '../api'
 import ExternalLink from '../components/ExternalLink'
 import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
 import FilterPanel from '../search/FilterPanel'
 import Publications from '../search/Publications'
 import { projectPublications } from '../search/parsePublications'
-import { DEFAULT_SORT, type SortKey } from '../search/filters'
+import { RELEVANCE_SORT, type SortKey } from '../search/filters'
 import {
   applyUpdate,
   filtersKey,
@@ -145,7 +145,8 @@ export default function SearchPage() {
 
   // With no filters applied, the page shows the latest projects instead of
   // searching the whole table, and pages and sorts nothing on the server.
-  const showLatest = Object.keys(applied).length === 0 && !state.accessions
+  const showLatest = Object.keys(applied).length === 0 && !state.accessions && !state.semanticQuery
+  const hasFilters = Object.keys(applied).length > 0
 
   // The latest response, tagged with the request it answers, so a stale
   // response never shows as current.
@@ -208,7 +209,7 @@ export default function SearchPage() {
           sortDirections: ['descend' as const, 'ascend' as const],
         }
 
-  const columns: TableColumnsType<Bioproject> = [
+  const columns: TableColumnsType<SearchHit> = [
     {
       title: 'BioProject',
       dataIndex: 'bioproject',
@@ -261,11 +262,20 @@ export default function SearchPage() {
     { title: 'Publications', dataIndex: 'publication_count', width: 130, align: 'right', ...sortable('publications') },
     { title: 'Released', dataIndex: 'project_release_date', width: 112, ...sortable('release') },
   ]
+  if (state.semanticQuery) {
+    columns.splice(1, 0, {
+      title: <span title="Cosine similarity between the search text and the project's title and description">Match</span>,
+      dataIndex: 'similarity',
+      width: 80,
+      align: 'right',
+      render: (v: number | null | undefined) => (v == null ? null : v.toFixed(2)),
+    })
+  }
 
-  const onTableChange: TableProps<Bioproject>['onChange'] = (_pagination, _filters, sorter, extra) => {
+  const onTableChange: TableProps<SearchHit>['onChange'] = (_pagination, _filters, sorter, extra) => {
     if (extra.action !== 'sort' || Array.isArray(sorter)) return
     state.setSort(
-      sorter.order ? `${String(sorter.columnKey)}_${sorter.order === 'ascend' ? 'asc' : 'desc'}` : DEFAULT_SORT,
+      sorter.order ? `${String(sorter.columnKey)}_${sorter.order === 'ascend' ? 'asc' : 'desc'}` : null,
     )
   }
 
@@ -276,7 +286,9 @@ export default function SearchPage() {
       ? 'Search failed'
       : state.accessions
         ? `No project in the database has the accession ${state.accessions.join(', ')}`
-        : !showLatest
+        : state.semanticQuery
+          ? `No projects are similar enough to “${state.semanticQuery}”${hasFilters ? ' and match these filters' : ''}. Try describing the data differently.`
+          : !showLatest
           ? 'No projects match these filters'
           : 'The database has no projects yet. Load data with the scripts in Automations/ (see docs/running.md).'
 
@@ -328,21 +340,11 @@ export default function SearchPage() {
           </Badge>
         </div>
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-          {appliedQuery && !state.accessions ? (
-            <Typography.Text type="warning" className="text-xs">
-              “{appliedQuery}” isn't a BioProject or SRA study accession. Searching by description is coming
-              soon, so results use the filters only.
-            </Typography.Text>
-          ) : (
-            <>
-              <span>
-                Enter BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, several
-                separated by spaces.
-              </span>
-              <Tag color="gold" className="!m-0">Coming soon</Tag>
-              <span>Searching by description.</span>
-            </>
-          )}
+          <span>
+            Enter BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, several separated
+            by spaces, or describe the data (e.g. “RNA-seq of breast cancer tumors treated with tamoxifen”) to
+            find similar projects.
+          </span>
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -357,7 +359,11 @@ export default function SearchPage() {
             {showLatest
               ? `Showing the ${LATEST_COUNT} most recently released BioProjects. Choose filters and click Search to search all projects.`
               : results
-                ? `${results.total.toLocaleString()} project${results.total === 1 ? '' : 's'}`
+                ? `${results.total.toLocaleString()} project${results.total === 1 ? '' : 's'}` +
+                  (state.semanticQuery
+                    ? ` similar to “${state.semanticQuery}”` +
+                      (state.sort === RELEVANCE_SORT ? ', most similar first' : '')
+                    : '')
                 : ' '}
           </span>
         </div>
@@ -376,7 +382,7 @@ export default function SearchPage() {
 
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}
 
-        <Table<Bioproject>
+        <Table<SearchHit>
           rowKey={(p) => `${p.bioproject}:${p.sra_study}`}
           columns={columns}
           dataSource={error ? [] : (results?.items ?? [])}
