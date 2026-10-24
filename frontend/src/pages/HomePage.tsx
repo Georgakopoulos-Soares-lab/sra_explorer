@@ -9,6 +9,7 @@ import { Button, Card, Skeleton, Statistic, Tag, Typography } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { api, type Stats } from '../api'
+import BrandName from '../components/BrandName'
 import { PUBLICATION } from '../config'
 
 const { Title, Paragraph, Text } = Typography
@@ -101,9 +102,11 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
       <section className="mb-10 text-center">
-        <Title className="!mb-3">SRA Explorer</Title>
+        <Title className="!mb-3">
+          <BrandName />
+        </Title>
         <Paragraph className="mx-auto max-w-2xl text-lg text-gray-600">
-          Find sequencing datasets in the NCBI Sequence Read Archive. SRA Explorer brings SRA run
+          Find sequencing datasets in the NCBI Sequence Read Archive. SRAscout brings SRA run
           metadata and BioProject records together, so you can search projects by what they
           studied and how their data was sequenced.
         </Paragraph>
@@ -177,7 +180,7 @@ export default function HomePage() {
             </Paragraph>
           ) : (
             <Text type="secondary">
-              The SRA Explorer paper is not published yet. Its DOI and citation will appear here
+              The SRAscout paper is not published yet. Its DOI and citation will appear here
               once it is.
             </Text>
           )}
@@ -187,7 +190,7 @@ export default function HomePage() {
       <section>
         <Title level={3}>Data sources</Title>
         <Paragraph type="secondary">
-          All data comes from public archives. SRA Explorer is an independent tool and is not
+          All data comes from public archives. SRAscout is an independent tool and is not
           affiliated with NCBI or EMBL-EBI.
         </Paragraph>
         <ul className="list-none p-0">

@@ -69,8 +69,10 @@ class SraMetadataOut(BaseModel):
 
 
 class SearchHit(BioprojectOut):
-    # Cosine similarity to the search text (0-1); only set for text searches.
+    # Only set for text searches: cosine similarity to the search text (0-1),
+    # and whether the project contains all the words.
     similarity: Optional[float] = None
+    text_match: Optional[bool] = None
 
 
 class SearchResults(BaseModel):

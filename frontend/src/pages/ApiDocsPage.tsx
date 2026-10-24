@@ -147,7 +147,7 @@ export default function ApiDocsPage() {
       <main className="min-w-0 flex-1 rounded-lg bg-white px-6 py-4 lg:px-10">
         <Title className="!mb-2">Public API</Title>
         <Paragraph className="text-base text-gray-600">
-          Search SRA Explorer's BioProject and SRA study records from your own scripts and tools. The API is
+          Search SRAscout's BioProject and SRA study records from your own scripts and tools. The API is
           read-only, needs no account or key, and returns JSON.
         </Paragraph>
 

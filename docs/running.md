@@ -1,4 +1,4 @@
-# Running SRA Explorer locally
+# Running SRAscout locally
 
 The project has three parts that run side by side:
 
@@ -101,7 +101,8 @@ Backend environment variables:
 | `CORS_ORIGINS` | `http://localhost:5173`                                     | Comma-separated origins allowed to call the API directly |
 | `PUBLIC_API_WINDOW_SECONDS` | `5` | Public API rate limit: one request per this many seconds per IP |
 | `TRUST_FORWARDED_FOR` | `false` | Set to `true` behind a reverse proxy you control, so the rate limit uses the client IP from `X-Forwarded-For` |
-| `SEMANTIC_MIN_SIMILARITY` | `0.5` | Text searches leave out projects whose cosine similarity to the text is below this |
+| `SEMANTIC_MIN_SIMILARITY` | `0.5` | Text searches leave out projects whose cosine similarity to the text is below this, unless they contain all the words |
+| `TEXT_MIN_SIMILARITY` | `0.3` | Projects that contain all the words are still left out below this similarity |
 | `EMBEDDING_THREADS` | `4` | CPU threads used to embed search text |
 
 ## Pages
@@ -119,7 +120,7 @@ The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_pub
 
 The text box at the top of the search page finds projects by accession: type one or more BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, separated by spaces or commas, and click **Search**. They combine with any filters.
 
-Any other text is a semantic search: it finds projects whose title, name, organism and description are similar in meaning to the text, using the embeddings in `bioproject_embeddings` (built by `Automations/create_embeddings.py`). The API embeds the text with the same model, then takes the 1,000 nearest projects from the HNSW index, applies the filters, and leaves out projects with a cosine similarity below `SEMANTIC_MIN_SIMILARITY`. Results are ordered most similar first, and a **Match** column shows each project's similarity. Clicking a column header sorts by that column instead; clicking it until the sort clears goes back to most similar first. Because only the 1,000 nearest projects are considered, a broad search reports at most 1,000 results.
+Any other text runs a hybrid search: a semantic search over the project embeddings and a full-text search for projects containing all the words, merged so projects found by both come first. Results are ordered best match first; the **Match** column shows each project's similarity, with a **Words** tag when it contains all the words. The box also accepts `"quoted phrases"`, `OR`, and `-word`. Clicking a column header sorts by that column instead. See [search.md](search.md) for how it works, its limits and tuning.
 
 ### Sequencing files (ENA)
 
@@ -146,7 +147,7 @@ The website's search page uses these endpoints, defined in `backend/app/search.p
 | Endpoint                       | Purpose                                                              |
 | ------------------------------ | -------------------------------------------------------------------- |
 | `GET /search/latest`           | The 100 most recently released projects, shown before any search    |
-| `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count. With `q`, a semantic search: results carry a `similarity` and sort by it (`sort=relevance`) unless another sort is given |
+| `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count. With `q`, a hybrid semantic and full-text search: results carry `similarity` and `text_match`, and sort best match first (`sort=relevance`) unless another sort is given |
 | `GET /search/facets/{field}`   | Dropdown options with counts for one filter                          |
 | `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism and sequencing center |
 | `GET /search/stats`            | Counts shown on the home page                                         |
@@ -162,6 +163,26 @@ Create the search index once, so the search page's first view loads in milliseco
 ```bash
 docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/search_indexes.sql
 ```
+
+### Text search needs the `bioproject_fulltext` view
+
+The full-text half of the search box's text search reads from `bioproject_fulltext`, a materialized view with one row per BioProject holding its searchable text and a full-text index. Without it, text searches are semantic only.
+
+Create it once after loading `bioprojects` (takes about a minute):
+
+```bash
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/bioproject_fulltext.sql
+```
+
+After loading new data into `bioprojects`, refresh it:
+
+```bash
+docker exec sra_explorer_dev psql -U postgres -d postgres -c "REFRESH MATERIALIZED VIEW CONCURRENTLY bioproject_fulltext"
+```
+
+Like `study_facets` below, the API detects it automatically within a minute.
+
+For production, see [production.md](production.md): it lists every index and view the database needs, in order.
 
 ### Run filters need the `study_facets` view
 

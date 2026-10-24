@@ -1,6 +1,6 @@
-# SRA Explorer public API (v1)
+# SRAscout public API (v1)
 
-Search SRA Explorer's BioProject and SRA study records from your own scripts and tools. The API is read-only, needs no key, and returns JSON.
+Search SRAscout's BioProject and SRA study records from your own scripts and tools. The API is read-only, needs no key, and returns JSON.
 
 Base URL: `<server>/v1`. For example, on a local setup: `http://localhost:8000/v1`.
 

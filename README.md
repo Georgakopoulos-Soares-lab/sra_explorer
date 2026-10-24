@@ -1,4 +1,4 @@
-# SRA Explorer
+# SRAscout
 
 A web application for browsing metadata from the NCBI [Sequence Read Archive (SRA)](https://www.ncbi.nlm.nih.gov/sra). It brings SRA run metadata and NCBI BioProject records into one PostgreSQL database and lets you search them through a web interface.
 
@@ -45,7 +45,7 @@ npm install
 npm run dev
 ```
 
-See [docs/running.md](docs/running.md) for the full setup, configuration options and production build.
+See [docs/running.md](docs/running.md) for the full setup, configuration options and production build, [docs/production.md](docs/production.md) for the database indexes and views production needs, and [docs/search.md](docs/search.md) for how the text search works.
 
 ## Data sources
 

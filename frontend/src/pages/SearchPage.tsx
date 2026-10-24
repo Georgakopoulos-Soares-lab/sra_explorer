@@ -22,6 +22,8 @@ import {
 const NCBI = 'https://www.ncbi.nlm.nih.gov'
 const ENA = 'https://www.ebi.ac.uk/ena/browser/view'
 const LATEST_COUNT = 100
+// Shown under the search box; clicking it runs this search.
+const EXAMPLE_QUERY = 'RNA-seq of breast cancer tumors treated with tamoxifen'
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
 
 // Asks ENA (from the browser) how many runs the study has, and links to the
@@ -174,8 +176,9 @@ export default function SearchPage() {
     return () => controller.abort()
   }, [requestKey])
 
-  const runSearch = () => {
-    state.apply(draft, queryDraft)
+  const runSearch = (query = queryDraft) => {
+    setQueryDraft(query)
+    state.apply(draft, query)
     setDrawerOpen(false)
   }
 
@@ -264,11 +267,24 @@ export default function SearchPage() {
   ]
   if (state.semanticQuery) {
     columns.splice(1, 0, {
-      title: <span title="Cosine similarity between the search text and the project's title and description">Match</span>,
+      title: (
+        <span title="Similarity in meaning between the search text and the project's title and description (0-1). “Words” marks projects that contain all the words.">
+          Match
+        </span>
+      ),
       dataIndex: 'similarity',
-      width: 80,
+      width: 90,
       align: 'right',
-      render: (v: number | null | undefined) => (v == null ? null : v.toFixed(2)),
+      render: (v: number | null | undefined, p) => (
+        <div className="flex flex-col items-end gap-1">
+          {v != null && <span>{v.toFixed(2)}</span>}
+          {p.text_match && (
+            <Tag color="green" className="!m-0 !text-xs" title="Contains all the words of the search">
+              Words
+            </Tag>
+          )}
+        </div>
+      ),
     })
   }
 
@@ -300,7 +316,7 @@ export default function SearchPage() {
         </Typography.Text>
       )}
       <div className="flex gap-2">
-        <Button type="primary" icon={<SearchOutlined />} onClick={runSearch} block>
+        <Button type="primary" icon={<SearchOutlined />} onClick={() => runSearch()} block>
           Search
         </Button>
         <Button onClick={reset}>Reset</Button>
@@ -331,10 +347,10 @@ export default function SearchPage() {
             placeholder="BioProject or SRA study accession (e.g. PRJNA169753, SRP079428), or describe the data"
             value={queryDraft}
             onChange={(e) => setQueryDraft(e.target.value)}
-            onPressEnter={runSearch}
+            onPressEnter={() => runSearch()}
           />
           <Badge dot={dirty} offset={[-4, 4]}>
-            <Button type="primary" size="large" onClick={runSearch}>
+            <Button type="primary" size="large" onClick={() => runSearch()}>
               Search
             </Button>
           </Badge>
@@ -342,8 +358,15 @@ export default function SearchPage() {
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
           <span>
             Enter BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, several separated
-            by spaces, or describe the data (e.g. “RNA-seq of breast cancer tumors treated with tamoxifen”) to
-            find similar projects.
+            by spaces, or describe the data to find similar projects. Try{' '}
+            <button
+              type="button"
+              className="cursor-pointer border-0 bg-transparent p-0 text-xs text-blue-600 underline-offset-2 hover:underline"
+              onClick={() => runSearch(EXAMPLE_QUERY)}
+            >
+              “{EXAMPLE_QUERY}”
+            </button>
+            .
           </span>
         </div>
 

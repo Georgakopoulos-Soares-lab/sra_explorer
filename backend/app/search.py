@@ -4,9 +4,13 @@ Run filters use the study_facets materialized view (backend/sql/study_facets.sql
 when it exists, and fall back to querying sra_metadata directly, which is much
 slower on the full table.
 
-Semantic search (the q parameter) embeds the text with the model that built
-bioproject_embeddings (see embeddings.py) and keeps projects whose cosine
-similarity to it is at least SEMANTIC_MIN_SIMILARITY, most similar first.
+Text search (the q parameter) is hybrid. A semantic search embeds the text
+with the model that built bioproject_embeddings (see embeddings.py) and keeps
+projects whose cosine similarity to it is at least SEMANTIC_MIN_SIMILARITY. A
+full-text search (backend/sql/bioproject_fulltext.sql) finds projects
+containing all the words. The two ranked
+lists are merged with reciprocal rank fusion, so projects found by both come
+first.
 """
 
 import logging
@@ -17,8 +21,10 @@ from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Date, MetaData, Table, and_, case, exists, func, or_, select, text, true
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import (
+    Column, Date, MetaData, Table, and_, case, exists, false, func, literal_column, or_, select, text, true,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import Session
 from sqlalchemy.types import Text
 
@@ -39,6 +45,14 @@ SEMANTIC_MIN_SIMILARITY = float(os.getenv("SEMANTIC_MIN_SIMILARITY", "0.5"))
 # The nearest projects found through the HNSW index, before filters and the
 # threshold are applied; at most 1000, the index's ef_search limit.
 SEMANTIC_CANDIDATES = 1000
+# The best full-text matches considered, before filters are applied.
+TEXT_CANDIDATES = 1000
+# Text matches outside the semantic list must still be at least this similar,
+# which drops projects that only mention a word in passing.
+TEXT_MIN_SIMILARITY = float(os.getenv("TEXT_MIN_SIMILARITY", "0.3"))
+# Reciprocal rank fusion: a project scores 1 / (RRF_K + rank) in each list it
+# is in. 60 is the usual value; larger values flatten the gap between ranks.
+RRF_K = 60
 
 # Filter name -> (column, stores several values joined by "; ").
 PROJECT_FIELDS = {
@@ -81,18 +95,29 @@ F = Table(
     Column("last_run_release", Date),
 )
 
-_facets_checked: Optional[tuple[float, bool]] = None
+# Not part of models.Base either; see backend/sql/bioproject_fulltext.sql.
+T = Table(
+    "bioproject_fulltext",
+    MetaData(),
+    Column("bioproject", Text, primary_key=True),
+    Column("document", TSVECTOR),
+)
+
+_relations_checked: dict[str, tuple[float, bool]] = {}
+
+
+def has_relation(name: str) -> bool:
+    """Whether a table or view exists; rechecked every minute."""
+    checked_at, exists_ = _relations_checked.get(name, (None, False))
+    if checked_at is None or time.monotonic() - checked_at > 60:
+        with engine.connect() as conn:
+            exists_ = conn.scalar(text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name})
+        _relations_checked[name] = (time.monotonic(), exists_)
+    return exists_
 
 
 def has_study_facets() -> bool:
-    """Whether the study_facets view exists; rechecked every minute."""
-    global _facets_checked
-    checked_at, exists_ = _facets_checked or (None, False)
-    if checked_at is None or time.monotonic() - checked_at > 60:
-        with engine.connect() as conn:
-            exists_ = conn.scalar(text("SELECT to_regclass('study_facets') IS NOT NULL"))
-        _facets_checked = (time.monotonic(), exists_)
-    return exists_
+    return has_relation("study_facets")
 
 # Filter prefix -> date column; used as <prefix>_from / <prefix>_to.
 DATE_FIELDS = {
@@ -256,7 +281,7 @@ def search_bioprojects(
     where = and_(true(), *build_conditions(filters))
     q = (filters.q or "").strip()
     if q:
-        return semantic_search(db, q, where, filters)
+        return hybrid_search(db, q, where, filters)
 
     sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
     total = db.scalar(select(func.count()).select_from(B).where(where))
@@ -270,11 +295,11 @@ def search_bioprojects(
     return {"total": total, "items": db.scalars(stmt).all()}
 
 
-def semantic_search(db: Session, q: str, where, filters: SiteSearchFilters) -> dict:
-    """Projects similar to q that also match the filters.
+def hybrid_search(db: Session, q: str, where, filters: SiteSearchFilters) -> dict:
+    """Projects similar to q or containing its words, that also match the filters.
 
-    Only the SEMANTIC_CANDIDATES nearest projects are considered, so a broad
-    query reports at most that many results.
+    Only the SEMANTIC_CANDIDATES nearest and TEXT_CANDIDATES best text
+    matches are considered, so a broad query reports at most their sum.
     """
     try:
         query_vec = embeddings.embed(q)
@@ -282,8 +307,8 @@ def semantic_search(db: Session, q: str, where, filters: SiteSearchFilters) -> d
         logger.exception("Could not embed the search text")
         raise HTTPException(status_code=503, detail="Searching by description is unavailable right now.")
 
-    # The ORDER BY ... LIMIT form lets Postgres use the HNSW index. ef_search
-    # must be at least the LIMIT for the index to return that many rows.
+    # Semantic list. The ORDER BY ... LIMIT form lets Postgres use the HNSW
+    # index; ef_search must be at least the LIMIT to return that many rows.
     db.execute(text(f"SET LOCAL hnsw.ef_search = {SEMANTIC_CANDIDATES}"))
     distance = E.embedding.cosine_distance(query_vec)
     nearest = (
@@ -293,22 +318,75 @@ def semantic_search(db: Session, q: str, where, filters: SiteSearchFilters) -> d
         .subquery()
     )
     # Vectors are normalised, so similarity = 1 - cosine distance.
-    similar = and_(where, nearest.c.distance <= 1 - SEMANTIC_MIN_SIMILARITY)
-    joined = B.__table__.join(nearest, nearest.c.bioproject == B.bioproject)
+    semantic = (
+        select(nearest.c.bioproject, func.row_number().over(order_by=nearest.c.distance).label("rank"))
+        .where(nearest.c.distance <= 1 - SEMANTIC_MIN_SIMILARITY)
+        .subquery()
+    )
 
-    total = db.scalar(select(func.count()).select_from(joined).where(similar))
-    order = [nearest.c.distance] if filters.sort in (None, "relevance") else [SORTS[filters.sort]]
+    # Text list. websearch_to_tsquery needs every word (stemmed, stop words
+    # dropped) and also accepts "quoted phrases", OR, and -excluded words.
+    # Normalisation 1 divides the rank by the log of the text's length, so
+    # long descriptions that repeat a word don't crowd out focused projects.
+    tsquery = func.websearch_to_tsquery(literal_column("'english'::regconfig"), q)
+    text_score = func.ts_rank_cd(T.c.document, tsquery, 1)
+    text_best = (
+        select(T.c.bioproject, text_score.label("score"))
+        .where(T.c.document.op("@@")(tsquery))
+        .order_by(text_score.desc(), T.c.bioproject)
+        .limit(TEXT_CANDIDATES)
+    )
+    if not has_relation("bioproject_fulltext"):
+        text_best = text_best.where(false())  # semantic only
+    text_best = text_best.subquery()
+    # The similarity floor is checked only for these few rows: in the same
+    # query as the text match, Postgres computes it for every embedding first.
+    text_ranked = (
+        select(
+            text_best.c.bioproject,
+            func.row_number().over(order_by=(text_best.c.score.desc(), text_best.c.bioproject)).label("rank"),
+        )
+        .join(E, E.bioproject == text_best.c.bioproject)
+        .where(distance <= 1 - TEXT_MIN_SIMILARITY)
+        .subquery()
+    )
+
+    # Fusion: projects in either list, scored by their ranks in both.
+    fused = (
+        select(
+            func.coalesce(semantic.c.bioproject, text_ranked.c.bioproject).label("bioproject"),
+            (
+                func.coalesce(1.0 / (RRF_K + semantic.c.rank), 0)
+                + func.coalesce(1.0 / (RRF_K + text_ranked.c.rank), 0)
+            ).label("score"),
+            text_ranked.c.rank.is_not(None).label("text_match"),
+        )
+        .select_from(
+            semantic.join(text_ranked, semantic.c.bioproject == text_ranked.c.bioproject, full=True)
+        )
+        .subquery()
+    )
+    joined = B.__table__.join(fused, fused.c.bioproject == B.bioproject)
+
+    total = db.scalar(select(func.count()).select_from(joined).where(where))
+    order = [fused.c.score.desc()] if filters.sort in (None, "relevance") else [SORTS[filters.sort]]
+    # Shown in the results; also set for text matches outside the semantic list.
+    similarity = 1 - E.embedding.cosine_distance(query_vec)
     stmt = (
-        select(B, (1 - nearest.c.distance).label("similarity"))
-        .select_from(joined)
-        .where(similar)
+        select(B, similarity.label("similarity"), fused.c.text_match)
+        .select_from(joined.outerjoin(E, E.bioproject == B.bioproject))
+        .where(where)
         .order_by(*order, B.bioproject, B.sra_study)
         .limit(filters.limit)
         .offset(filters.offset)
     )
     items = [
-        {**schemas.BioprojectOut.model_validate(p).model_dump(), "similarity": round(sim, 4)}
-        for p, sim in db.execute(stmt)
+        {
+            **schemas.BioprojectOut.model_validate(p).model_dump(),
+            "similarity": None if sim is None else round(sim, 4),
+            "text_match": text_match,
+        }
+        for p, sim, text_match in db.execute(stmt)
     ]
     return {"total": total, "items": items}
 

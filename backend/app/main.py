@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="SRA Explorer API", lifespan=lifespan)
+app = FastAPI(title="SRAscout API", lifespan=lifespan)
 
 # The Vite dev server proxies /api to this app, so CORS only matters when the
 # frontend calls the API directly (e.g. VITE_API_BASE_URL=http://localhost:8000).

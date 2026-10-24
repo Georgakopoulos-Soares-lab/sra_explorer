@@ -1,5 +1,5 @@
 """
-Build the `bioprojects` table for the SRA explorer database.
+Build the `bioprojects` table for the SRAscout database.
 
 One row per (bioproject, sra_study) pair found in all_sra_experiments_metadata.tsv,
 enriched with project-level metadata parsed from NCBI's bioproject.xml

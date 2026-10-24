@@ -88,8 +88,10 @@ export interface HealthStatus {
 export type SearchParams = Record<string, string | string[]>
 
 export interface SearchHit extends Bioproject {
-  // Cosine similarity to the search text (0-1); only set for text searches.
+  // Only set for text searches: cosine similarity to the search text (0-1),
+  // and whether the project contains all the words.
   similarity?: number | null
+  text_match?: boolean | null
 }
 
 export interface SearchResults {

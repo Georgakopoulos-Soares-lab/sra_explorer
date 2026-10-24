@@ -1,5 +1,6 @@
 import { Layout, Menu } from 'antd'
 import { Link, Outlet, useLocation } from 'react-router'
+import BrandName from './BrandName'
 
 const NAV = [
   { key: '/', label: <Link to="/">Home</Link> },
@@ -13,8 +14,8 @@ export default function AppLayout() {
   return (
     <Layout className="min-h-screen">
       <Layout.Header className="flex items-center gap-6 !px-4">
-        <Link to="/" className="shrink-0 text-lg font-semibold !text-white">
-          SRA Explorer
+        <Link to="/" className="shrink-0 text-xl">
+          <BrandName onDark />
         </Link>
         <Menu
           theme="dark"
@@ -31,7 +32,7 @@ export default function AppLayout() {
       </Layout.Content>
 
       <Layout.Footer className="text-center text-sm text-gray-500">
-        SRA Explorer · Data from NCBI SRA, NCBI BioProject and ENA
+        SRAscout · Data from NCBI SRA, NCBI BioProject and ENA
       </Layout.Footer>
     </Layout>
   )
