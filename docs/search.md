@@ -93,10 +93,10 @@ Each result carries:
 
 | Field | Meaning | Shown as |
 | --- | --- | --- |
-| `similarity` | Cosine similarity between the search text and the project's embedding, 0–1 | The number in the **Match** column |
-| `text_match` | Whether the project was in the full-text list | A green **Words** tag in the **Match** column |
+| `similarity` | Cosine similarity between the search text and the project's embedding, 0–1 | Not shown on the website |
+| `text_match` | Whether the project was in the full-text list | Not shown on the website |
 
-A project with a **Words** tag and a low similarity got there through the text list; one with no tag got there through the semantic list.
+The search page used to show both in a **Match** column; it was removed to keep the table simple, and the results stay sorted best match first. The API still returns both: a project with `text_match` true and a low similarity got there through the text list; one with `text_match` false got there through the semantic list.
 
 ### 5. Suggested tags
 

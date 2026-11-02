@@ -49,7 +49,7 @@ Each result is one BioProject and SRA study pair, with all its fields (title, de
 How filters combine:
 
 - Repeat a parameter to match any of several values: `?platform=ILLUMINA&platform=PACBIO_SMRT`.
-- Except `tag`: repeated, a project must have **all** the tags: `?tag=liver&tag=mouse`. Only projects with tags (about a quarter so far) can match.
+- Except `tag`: repeated, a project must have **all** the tags: `?tag=liver&tag=mouse`. Add `tag_any=true` for projects with at least one of them. Only projects with tags (about a quarter so far) can match.
 - Different parameters must all match.
 - Run filters (`assay_type`, `platform`, `librarylayout`, `sample_country`, ...) match projects that have at least one run with all the given values.
 

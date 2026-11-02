@@ -27,6 +27,14 @@ const LATEST_COUNT = 100
 // Shown under the search box; clicking it runs this search.
 const EXAMPLE_QUERY = 'RNA-seq of breast cancer tumors treated with tamoxifen'
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
+// Publications tag: darker green for more publications, in three steps
+// (antd's green palette; text keeps enough contrast on each background).
+const publicationShade = (n: number) =>
+  n >= 3
+    ? '!border-[#237804] !bg-[#237804] !text-white' // 3+: green-8, white text
+    : n === 2
+      ? '!border-[#73d13d] !bg-[#95de64] !text-[#135200]' // 2: green-4, green-9 text
+      : '!border-[#95de64] !bg-[#d9f7be] !text-[#389e0d]' // 1: green-2, green-7 text
 const rowKey = (p: SearchHit) => `${p.bioproject}:${p.sra_study}`
 // An expanded project and its details share a tint and a blue bar on the left,
 // and a border under the details marks where the next project starts.
@@ -284,7 +292,23 @@ export default function SearchPage() {
       ...sortable('experiments'),
       render: (v: number | null) => v?.toLocaleString(),
     },
-    { title: 'Publications', dataIndex: 'publication_count', width: 130, align: 'right', ...sortable('publications') },
+    {
+      // The number of publications in a green tag; nothing when there are none.
+      title: 'Publications',
+      dataIndex: 'publication_count',
+      width: 130,
+      align: 'center',
+      ...sortable('publications'),
+      render: (n: number | null) =>
+        n ? (
+          <Tag
+            className={`!m-0 ${publicationShade(n)}`}
+            title={`${n.toLocaleString()} publication${n === 1 ? '' : 's'}`}
+          >
+            {n.toLocaleString()}
+          </Tag>
+        ) : null,
+    },
     {
       title: <span title="When the project's first run became public on SRA">Released</span>,
       dataIndex: 'release_date',
@@ -292,29 +316,6 @@ export default function SearchPage() {
       ...sortable('release'),
     },
   ]
-  if (state.semanticQuery) {
-    columns.splice(1, 0, {
-      title: (
-        <span title="Similarity in meaning between the search text and the project's title and description (0-1). “Words” marks projects that contain all the words.">
-          Match
-        </span>
-      ),
-      dataIndex: 'similarity',
-      width: 90,
-      align: 'right',
-      render: (v: number | null | undefined, p) => (
-        <div className="flex flex-col items-end gap-1">
-          {v != null && <span>{v.toFixed(2)}</span>}
-          {p.text_match && (
-            <Tag color="green" className="!m-0 !text-xs" title="Contains all the words of the search">
-              Words
-            </Tag>
-          )}
-        </div>
-      ),
-    })
-  }
-
   const onTableChange: TableProps<SearchHit>['onChange'] = (_pagination, _filters, sorter, extra) => {
     if (extra.action !== 'sort' || Array.isArray(sorter)) return
     state.setSort(
@@ -432,11 +433,12 @@ export default function SearchPage() {
 
         <TagBar
           selected={appliedTags}
+          matchAny={applied.tag_any === 'true'}
           params={apiParams}
           suggest={!showLatest && !error && (results?.total ?? 0) > 0}
           onAdd={selectTag}
           onRemove={(tag) => applyNow({ tag: appliedTags.filter((t) => t !== tag) })}
-          onClear={() => applyNow({ tag: null })}
+          onClear={() => applyNow({ tag: null, tag_any: null })}
         />
 
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}

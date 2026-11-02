@@ -115,6 +115,17 @@ export interface Stats {
   studies: number
   organisms: number
   runs: number
+  // Distinct publications linked to projects.
+  publications: number
+  // Distinct run assay types; null when that data isn't loaded.
+  assay_types: number | null
+  // % of samples (runs) with a tissue, cell type or cell line recorded; null when not loaded.
+  tissue_samples: number | null
+  tissue_samples_pct: number | null
+  cell_type_samples: number | null
+  cell_type_samples_pct: number | null
+  cell_line_samples: number | null
+  cell_line_samples_pct: number | null
 }
 
 // One search parameter of the public API (/v1/projects).

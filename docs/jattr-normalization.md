@@ -13,6 +13,7 @@ Two scripts turn this into a small, consistent record per BioProject:
 | `Automations/output/bioproject_attributes.tsv` | **Pipeline output**: one row per BioProject |
 | `Automations/output/bioproject_attributes_coverage.tsv` | How many runs and BioProjects have a value for each field |
 | `Automations/output/bioproject_attributes_schema.sql` | Creates the `bioproject_attributes` table and loads the pipeline output into it ([below](#loading-into-the-database)) |
+| `Automations/output/bioproject_attributes_coverage_schema.sql` | Creates the `bioproject_attributes_coverage` table and loads the coverage file into it, for the home page ([below](#coverage-on-the-home-page)) |
 
 ## Output
 
@@ -134,6 +135,28 @@ SELECT attributes->'tissue' FROM bioproject_attributes WHERE bioproject = 'PRJDB
 ```
 
 Containment matches values exactly, including case, so `"tissue": ["Liver"]` and `["liver"]` are different. The file loads only the per-BioProject output; the optional per-run file (`--per-run`, about 5 GB) has no table. The backend model is `BioprojectAttributes` in `backend/app/models.py`.
+
+### Coverage on the home page
+
+The home page shows the number of samples (sequencing runs) with a tissue, a cell type and a cell line recorded, for example "12,155,810 of all 42.5 million samples have a tissue recorded". These are the `runs` values of `bioproject_attributes_coverage.tsv`. They can only be counted per run, while the pipeline reads `sra_metadata_all.tsv`; the database holds the attributes summarised per project, not per run. Load the file after each pipeline run:
+
+```bash
+psql -d <db> -f output/bioproject_attributes_coverage_schema.sql   # update its \copy path first
+```
+
+Into the development container, copy the file from the cluster first and point the `\copy` at it:
+
+```bash
+scp <cluster>:/work/11795/dgrigor/ls6/projects/sra_explorer/Automations/output/bioproject_attributes_coverage.tsv Automations/output/
+docker cp Automations/output/bioproject_attributes_coverage.tsv sra_explorer_dev:/tmp/
+sed "s#'/work/[^']*coverage.tsv'#'/tmp/bioproject_attributes_coverage.tsv'#" Automations/output/bioproject_attributes_coverage_schema.sql \
+  | docker exec -i sra_explorer_dev psql -U postgres -d postgres
+docker exec sra_explorer_dev psql -U postgres -d postgres -c "SELECT * FROM bioproject_attributes_coverage"   # should list 14 fields
+```
+
+If `\copy` can't find the file, psql reports an error but the table is still created, empty, and the home page shows "–". The home page re-checks missing numbers every minute, so they appear within a minute of loading the file.
+
+The table is `bioproject_attributes_coverage (field, runs, runs_pct, bioprojects, bioprojects_pct)`, one row per field. Until it is loaded, the three cards show "–". `--reclean` doesn't rewrite the coverage file: it changes the per-project lists, not the per-run counts, so the coverage stays that of the last full run (placeholders it removes were already counted then, so the shares are slightly high until the next full run).
 
 ## Searching by sample attributes
 

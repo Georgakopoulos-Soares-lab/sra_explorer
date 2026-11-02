@@ -90,6 +90,7 @@ def describe_filters() -> list[dict]:
         {"name": "max_experiments", "kind": "integer", "description": "Maximum number of experiments"},
         {"name": "min_publications", "kind": "integer", "description": "Minimum number of publications"},
         {"name": "has_publications", "kind": "boolean", "description": "true or false"},
+        {"name": "tag_any", "kind": "boolean", "description": "true: projects with at least one of the given tags instead of all"},
         {"name": "has_geo", "kind": "boolean", "description": "Has GEO accessions: true or false"},
         {"name": "has_grants", "kind": "boolean", "description": "Has grants: true or false"},
         {"name": "sort", "kind": "string", "description": "One of: " + ", ".join(SORTS)},

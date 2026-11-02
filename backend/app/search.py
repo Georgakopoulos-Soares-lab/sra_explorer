@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.types import Text
 
 from . import embeddings, models, schemas
-from .database import engine, get_db
+from .database import SessionLocal, engine, get_db
 
 router = APIRouter(prefix="/search", tags=["search"])
 logger = logging.getLogger(__name__)
@@ -191,8 +191,10 @@ class SearchFilters(BaseModel):
     organization: list[str] = Field(default_factory=list)
     journals: list[str] = Field(default_factory=list)
     # Tag words (bioproject_tags). Unlike the other lists, a project must have
-    # every selected tag; projects without tags never match.
+    # every selected tag, or with tag_any at least one; projects without tags
+    # never match.
     tag: list[str] = Field(default_factory=list)
+    tag_any: Optional[bool] = None
 
     # Sample attributes (ATTRIBUTE_FIELDS); case-insensitive.
     cell_line: list[str] = Field(default_factory=list)
@@ -273,7 +275,10 @@ def build_conditions(f: SearchFilters) -> list:
             conditions.append(column.in_(values))
 
     if f.tag:
-        conditions.append(exists().where(G.bioproject == B.bioproject, tag_array(G.tags).contains(f.tag)))
+        # @> (all tags) or && (any tag); both use the GIN index.
+        tags = tag_array(G.tags)
+        match = tags.overlap(f.tag) if f.tag_any else tags.contains(f.tag)
+        conditions.append(exists().where(G.bioproject == B.bioproject, match))
 
     attributes = {name: getattr(f, name) for name in ATTRIBUTE_FIELDS if getattr(f, name)}
     if attributes and not has_relation("bioproject_attribute_values"):
@@ -715,15 +720,26 @@ def warm_cache() -> None:
             distinct_values(name)
         except Exception:
             logger.exception("Could not load filter values for %s", name)
+    try:
+        with SessionLocal() as db:
+            stats(db)
+    except Exception:
+        logger.exception("Could not compute the home page statistics")
 
 
 # Both take the other selected filters as extra query parameters (the same as
 # /search/bioprojects) and then list only values found among the projects
 # matching them, with counts of those projects.
+# Values left out of the website's dropdowns: catch-alls that don't help to
+# narrow a search. They can still be searched for by URL or the public API.
+HIDDEN_FACET_VALUES = {"supergroup": {"Other"}}
+
+
 @router.get("/facets/{field}", response_model=list[schemas.FacetValue])
 def facet(request: Request, field: Literal[tuple(FACET_FIELDS)]):  # type: ignore[valid-type]
     values = narrowed_values(field, filters_from_request(request, {"field"}))
-    return [{"value": v, "count": n} for v, n in values]
+    hidden = HIDDEN_FACET_VALUES.get(field, set())
+    return [{"value": v, "count": n} for v, n in values if v not in hidden]
 
 
 @router.get("/suggest", response_model=list[schemas.FacetValue])
@@ -746,6 +762,39 @@ def suggest(
 
 @router.get("/stats", response_model=schemas.Stats)
 def stats(db: Session = Depends(get_db)):
+    """Counts for the home page. Cached for an hour (and computed at startup),
+    since the distinct counts take a few seconds."""
+    global _stats_cache
+    if _stats_cache[0] > time.monotonic():
+        return _stats_cache[1]
+    values = compute_stats(db)
+    # Numbers missing because a table isn't loaded yet are checked again after
+    # a minute, so they appear soon after it is.
+    ttl = CACHE_SECONDS if None not in values.values() else 60
+    _stats_cache = (time.monotonic() + ttl, values)
+    return values
+
+
+_stats_cache: tuple[float, dict] = (0, {})
+
+# Distinct publications linked to projects: each (database, id) once, from the
+# structured publications and from the plain pubmed_ids column. A paper linked
+# by both its PubMed ID and its DOI counts twice; few are.
+PUBLICATIONS_SQL = """
+SELECT count(*) FROM (
+    SELECT lower(p->>'db_type') || ':' || lower(trim(p->>'id'))
+    FROM bioprojects,
+         jsonb_array_elements(CASE WHEN jsonb_typeof(publications) = 'array' THEN publications ELSE '[]' END) p
+    WHERE coalesce(trim(p->>'id'), '') <> '' AND p->>'db_type' <> 'NotAvailable'
+    UNION
+    SELECT 'pubmed:' || trim(id)
+    FROM bioprojects, unnest(string_to_array(pubmed_ids, '; ')) id
+    WHERE trim(id) <> ''
+) ids
+"""
+
+
+def compute_stats(db: Session) -> dict:
     projects, studies, organisms = db.execute(
         select(
             func.count(func.distinct(B.bioproject)),
@@ -761,7 +810,36 @@ def stats(db: Session = Depends(get_db)):
     # 0 can also mean the table wasn't analyzed since loading, so count to be sure.
     if runs is None or runs <= 0:
         runs = db.scalar(select(func.count()).select_from(R))
-    return {"bioprojects": projects, "studies": studies, "organisms": organisms, "runs": runs}
+    publications = db.scalar(text(PUBLICATIONS_SQL))
+
+    # Distinct run assay types, as the filter lists them. None without study_facets.
+    assay_types = None
+    if has_study_facets():
+        assays = select(func.unnest(F.c.assay_types).label("assay_type")).subquery()
+        assay_types = db.scalar(select(func.count(func.distinct(assays.c.assay_type))))
+    # % of runs (samples) whose attributes have a tissue, cell type or cell
+    # line: counted per run by jattr_normalize.py, which reads the full run
+    # metadata the database doesn't hold, and loaded from its coverage file.
+    # None when bioproject_attributes_coverage isn't loaded.
+    coverage = {}
+    if has_relation("bioproject_attributes_coverage"):
+        coverage = {field: (runs, float(pct)) for field, runs, pct in db.execute(text(
+            "SELECT field, runs, runs_pct FROM bioproject_attributes_coverage"
+            " WHERE field IN ('tissue', 'cell_type', 'cell_line')"
+        ))}
+    return {
+        "bioprojects": projects,
+        "studies": studies,
+        "organisms": organisms,
+        "runs": runs,
+        "publications": publications,
+        "assay_types": assay_types,
+        **{
+            f"{name}_samples{suffix}": coverage[field][i] if field in coverage else None
+            for name, field in [("tissue", "tissue"), ("cell_type", "cell_type"), ("cell_line", "cell_line")]
+            for i, suffix in enumerate(["", "_pct"])
+        },
+    }
 
 
 # Suggested tags are counted over this many of a search's top results, which

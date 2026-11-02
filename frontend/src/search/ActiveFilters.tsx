@@ -19,7 +19,7 @@ const PART_LABELS: Record<string, string> = {
 function chipsFor(values: FilterValues): Chip[] {
   const chips: Chip[] = []
   for (const def of ALL_FILTERS) {
-    if (def.key === 'tag') continue // tags have their own row (TagBar)
+    if (def.key === 'tag' || def.key === 'tag_any') continue // tags have their own row (TagBar)
     for (const key of paramKeys(def)) {
       const value = values[key]
       if (!value) continue

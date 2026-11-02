@@ -6,8 +6,10 @@ import { api, type FacetValue, type SearchParams } from '../api'
 // The Tags row above the results: the chosen tags (removable), then tags
 // common among the top results as suggestions to add. Suggestions load after
 // the results, so they never delay them. Hidden when there's nothing to show.
-export default function TagBar({ selected, params, suggest, onAdd, onRemove, onClear }: {
+export default function TagBar({ selected, matchAny = false, params, suggest, onAdd, onRemove, onClear }: {
   selected: string[]
+  // Whether a project needs only one of the chosen tags ("Match any of the tags").
+  matchAny?: boolean
   // The search's parameters, for the suggestions.
   params: SearchParams
   // False while there are no results to suggest from.
@@ -36,6 +38,11 @@ export default function TagBar({ selected, params, suggest, onAdd, onRemove, onC
     <div className="mb-2 flex items-start gap-2 text-xs">
       <span className="w-12 shrink-0 pt-1 text-sm text-gray-500">Tags</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 pt-0.5">
+        {selected.length > 1 && (
+          <span className="mr-1 text-gray-500" title='Change with "Match any of the tags" in the filter panel'>
+            {matchAny ? 'any of' : 'all of'}
+          </span>
+        )}
         {selected.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 rounded bg-blue-100 py-0.5 pl-2 pr-1 text-blue-700">
             {t}

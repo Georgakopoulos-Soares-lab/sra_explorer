@@ -14,6 +14,8 @@ export type FilterDef =
   | { kind: 'min'; key: string; label: string }
   // Any / Yes / No, sent as true or false.
   | { kind: 'flag'; key: string; label: string }
+  // An on/off switch, sent as true when on and left out when off.
+  | { kind: 'toggle'; key: string; label: string }
 
 export interface FilterSection {
   key: string
@@ -27,7 +29,7 @@ export const FILTER_SECTIONS: FilterSection[] = [
     // Kept as 'organism' so the panel still opens on it.
     key: 'organism',
     title: 'Organism, samples and sequencing',
-    hint: 'Run filters (assay type, platform to sequencing center) need one run matching them all. Sample filters (cell line to ChIP target) match when the project\'s samples include each value, not necessarily in the same sample.',
+    hint: 'Run filters (assay type, instrument to sequencing center) need one run matching them all. Sample filters (cell line to ChIP target) match when the project\'s samples include each value, not necessarily in the same sample.',
     filters: [
       { kind: 'select', key: 'supergroup', label: 'Supergroup' },
       { kind: 'suggest', key: 'organism', label: 'Organism' },
@@ -42,7 +44,6 @@ export const FILTER_SECTIONS: FilterSection[] = [
       { kind: 'suggest', key: 'treatment_or_growth_condition', label: 'Treatment or condition' },
       { kind: 'suggest', key: 'molecular_target', label: 'ChIP target' },
       // Run filters (study_facets).
-      { kind: 'select', key: 'platform', label: 'Platform' },
       { kind: 'select', key: 'instrument', label: 'Instrument' },
       { kind: 'select', key: 'librarylayout', label: 'Library layout' },
       { kind: 'select', key: 'libraryselection', label: 'Library selection' },
@@ -54,8 +55,11 @@ export const FILTER_SECTIONS: FilterSection[] = [
   {
     key: 'tags',
     title: 'Tags',
-    hint: 'Projects with all the chosen tags. Only some projects have tags so far, so this leaves out projects without them.',
-    filters: [{ kind: 'suggest', key: 'tag', label: 'Tag' }],
+    hint: 'Projects with all the chosen tags, or with at least one of them when "Match any of the tags" is on. Only some projects have tags so far, so this leaves out projects without them.',
+    filters: [
+      { kind: 'suggest', key: 'tag', label: 'Tag' },
+      { kind: 'toggle', key: 'tag_any', label: 'Match any of the tags' },
+    ],
   },
   {
     key: 'submitter',

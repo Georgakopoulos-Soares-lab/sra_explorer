@@ -95,6 +95,18 @@ class Stats(BaseModel):
     studies: int
     organisms: int
     runs: int
+    # Distinct publications linked to projects.
+    publications: int
+    # Distinct run assay types; None without study_facets.
+    assay_types: Optional[int] = None
+    # % of runs (samples) with a tissue, cell type or cell line in their
+    # attributes; None without bioproject_attributes_coverage.
+    tissue_samples: Optional[int] = None
+    tissue_samples_pct: Optional[float] = None
+    cell_type_samples: Optional[int] = None
+    cell_type_samples_pct: Optional[float] = None
+    cell_line_samples: Optional[int] = None
+    cell_line_samples_pct: Optional[float] = None
 
 
 # Public API (/v1)

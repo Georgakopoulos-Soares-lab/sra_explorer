@@ -1,4 +1,4 @@
-import { Badge, Collapse, DatePicker, InputNumber, Segmented, Select, Typography } from 'antd'
+import { Badge, Collapse, DatePicker, InputNumber, Segmented, Select, Switch, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
 import { api, type FacetValue, type SearchParams } from '../api'
@@ -266,6 +266,18 @@ function FlagFilter({ def, values, onChange }: Props & { def: FilterDef }) {
 
 function Filter(props: Props & { def: FilterDef }) {
   const { def } = props
+  if (def.kind === 'toggle') {
+    return (
+      <label className="flex cursor-pointer items-center justify-between gap-2">
+        <span className="text-sm">{def.label}</span>
+        <Switch
+          size="small"
+          checked={props.values[def.key] === 'true'}
+          onChange={(on) => props.onChange({ [def.key]: on ? 'true' : null })}
+        />
+      </label>
+    )
+  }
   if (def.kind === 'flag') {
     return (
       <div className="flex items-center justify-between gap-2">
@@ -280,7 +292,7 @@ function Filter(props: Props & { def: FilterDef }) {
     dateRange: <DateRangeFilter {...props} />,
     numberRange: <NumberRangeFilter {...props} />,
     min: <NumberRangeFilter {...props} />,
-  }[def.kind]
+  }[def.kind as Exclude<FilterDef['kind'], 'flag' | 'toggle'>]
   return (
     <div>
       <div className="mb-1 text-sm">{def.label}</div>

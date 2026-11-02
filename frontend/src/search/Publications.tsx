@@ -1,30 +1,42 @@
 import { Table, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
+import { useEffect, useState } from 'react'
 import ExternalLink from '../components/ExternalLink'
+import { pubmedSummaries, type PubmedSummary } from '../ncbi/pubmed'
 import type { Publication } from './parsePublications'
 
 // Rows shown before the table scrolls; most projects have one to three.
 const VISIBLE_ROWS = 4
 
-const columns: TableColumnsType<Publication & { key: number }> = [
+type Row = Publication & { key: number; pending: boolean }
+
+const LOADING = (
+  <Typography.Text type="secondary" italic className="!text-xs">
+    Loading from PubMed…
+  </Typography.Text>
+)
+
+const columns: TableColumnsType<Row> = [
   {
     title: 'Title',
     dataIndex: 'title',
-    render: (title: string | null) => (
-      <Typography.Text ellipsis={{ tooltip: title }} className="!text-xs">
-        {title ?? '—'}
-      </Typography.Text>
-    ),
+    render: (title: string | null, row) =>
+      !title && row.pending ? LOADING : (
+        <Typography.Text ellipsis={{ tooltip: title }} className="!text-xs">
+          {title ?? '—'}
+        </Typography.Text>
+      ),
   },
   {
     title: 'Citation',
     dataIndex: 'citation',
     width: '30%',
-    render: (citation: string | null) => (
-      <Typography.Text type="secondary" ellipsis={{ tooltip: citation }} className="!text-xs">
-        {citation ?? '—'}
-      </Typography.Text>
-    ),
+    render: (citation: string | null, row) =>
+      !citation && row.pending ? LOADING : (
+        <Typography.Text type="secondary" ellipsis={{ tooltip: citation }} className="!text-xs">
+          {citation ?? '—'}
+        </Typography.Text>
+      ),
   },
   {
     title: 'Links',
@@ -52,14 +64,50 @@ const columns: TableColumnsType<Publication & { key: number }> = [
   },
 ]
 
+// PMIDs of publications missing a title or citation, which PubMed can fill in.
+const incomplete = (items: Publication[]) =>
+  items.filter((p) => p.pmid && (!p.title || !p.citation)).map((p) => p.pmid!)
+
 // A small, muted table, so publications don't compete with the description.
+// Titles and citations missing from our data are fetched from PubMed by the
+// browser when the table shows, only for those publications (see ncbi/pubmed.ts).
+// Only blanks are filled; values from our data are kept.
 export default function Publications({ items }: { items: Publication[] }) {
+  const pmids = incomplete(items)
+  const key = pmids.join(',')
+  const [lookup, setLookup] = useState<{ key: string; summaries: Map<string, PubmedSummary | null> }>()
+
+  useEffect(() => {
+    if (!key) return
+    let active = true
+    pubmedSummaries(key.split(','))
+      .then((summaries) => active && setLookup({ key, summaries }))
+      .catch(() => active && setLookup({ key, summaries: new Map() })) // leave the blanks
+    return () => {
+      active = false
+    }
+  }, [key])
+
+  const done = lookup?.key === key
+  const rows: Row[] = items.map((pub, i) => {
+    const found = pub.pmid && done ? lookup.summaries.get(pub.pmid) : null
+    return {
+      ...pub,
+      key: i,
+      title: pub.title ?? found?.title ?? null,
+      citation: pub.citation ?? found?.citation ?? null,
+      doi: pub.doi ?? found?.doi ?? null,
+      pmc: pub.pmc ?? found?.pmc ?? null,
+      pending: Boolean(key) && !done && pmids.includes(pub.pmid ?? ''),
+    }
+  })
+
   return (
     <Table
       size="small"
       className="text-xs [&_.ant-table-cell]:!py-1 [&_.ant-table-cell]:!text-xs"
       columns={columns}
-      dataSource={items.map((pub, i) => ({ ...pub, key: i }))}
+      dataSource={rows}
       pagination={false}
       tableLayout="fixed"
       scroll={items.length > VISIBLE_ROWS ? { y: VISIBLE_ROWS * 30 } : undefined}

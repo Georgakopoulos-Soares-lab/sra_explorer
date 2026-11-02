@@ -58,7 +58,6 @@ Filter changes are drafts until **Search** is clicked; unapplied changes are fla
 | Genotype or strain | `genotype_or_strain` | type-ahead | `bioproject_attribute_values` | sample |
 | Treatment or condition | `treatment_or_growth_condition` | type-ahead | `bioproject_attribute_values` | sample |
 | ChIP target | `molecular_target` | type-ahead | `bioproject_attribute_values` | sample |
-| Platform | `platform` | dropdown | runs (`study_facets`) | run |
 | Instrument | `instrument` | dropdown | runs (`study_facets`) | run |
 | Library layout | `librarylayout` | dropdown | runs (`study_facets`) | run |
 | Library selection | `libraryselection` | dropdown | runs (`study_facets`) | run |
@@ -70,6 +69,7 @@ Filter changes are drafts until **Search** is clicked; unapplied changes are fla
 | Filter | Parameter | Control | Data |
 | --- | --- | --- | --- |
 | Tag | `tag` | type-ahead, with each tag's type when known | `bioproject_tags` |
+| Match any of the tags | `tag_any=true` | on/off switch, off by default | |
 
 ### Submitter, size and publications
 
@@ -85,22 +85,22 @@ Dropdowns load their options when opened; type-ahead boxes search as you type. B
 
 ### Filters only in the API
 
-The backend still accepts filters that were taken out of the panel, so links and scripts using them keep working: `data_types`, `objectives`, `relevance`, `target_material`, `target_capture`, `sample_scope`, `method_type`, `access`, `librarysource`, `run_organism`, `sample_country`, `run_release_from` / `run_release_to`, `submitted_from` / `submitted_to`, `updated_from` / `updated_to`, `first_publication_from` / `first_publication_to`, `min_publications`, `has_geo` and `has_grants`. `GET /v1/filters` lists them all. The sample attributes `age`, `developmental_stage`, `host` and `source_name` have no filter at all (see [jattr-normalization.md](jattr-normalization.md#searching-by-sample-attributes)).
+The backend still accepts filters that were taken out of the panel, so links and scripts using them keep working: `data_types`, `objectives`, `relevance`, `target_material`, `target_capture`, `sample_scope`, `method_type`, `access`, `platform`, `librarysource`, `run_organism`, `sample_country`, `run_release_from` / `run_release_to`, `submitted_from` / `submitted_to`, `updated_from` / `updated_to`, `first_publication_from` / `first_publication_to`, `min_publications`, `has_geo` and `has_grants`. `GET /v1/filters` lists them all. The sample attributes `age`, `developmental_stage`, `host` and `source_name` have no filter at all (see [jattr-normalization.md](jattr-normalization.md#searching-by-sample-attributes)).
 
 ## How filters combine
 
 - **Different filters must all match.** Organism *Mus musculus* + Tissue *liver* finds mouse projects with liver samples.
 - **Several values in one filter match any of them.** Tissue *liver* + *blood* finds projects with either.
-- **Except tags: a project must have every chosen tag.** Tags usually describe one project from several sides (`liver` + `mouse`), so adding a tag narrows the search. Only projects with tags (about a quarter so far) can match a tag filter.
+- **Except tags: a project must have every chosen tag**, because tags usually describe one project from several sides (`liver` + `mouse`), so adding a tag narrows the search. Turn on **Match any of the tags** to find projects with at least one of them instead: `liver` + `hepatocyte` finds 319 projects with both, or 2,918 with either. The Tags row above the results says "all of" or "any of" when two or more tags are chosen. Only projects with tags (about a quarter so far) can match a tag filter.
 
 Each kind of filter matches at its own level:
 
 | Kind | A project matches when | Example |
 | --- | --- | --- |
 | Project | the project's own field has the value | Organism, Released, Organization |
-| Run | **one run** of the project has a chosen value for every run filter at once | Assay type *RNA-Seq* + Platform *OXFORD_NANOPORE* needs an RNA-Seq run sequenced on Nanopore, not an RNA-Seq run on Illumina and another run on Nanopore |
+| Run | **one run** of the project has a chosen value for every run filter at once | Assay type *RNA-Seq* + Instrument *PromethION* needs an RNA-Seq run sequenced on a PromethION, not an RNA-Seq run on another instrument and a different run on a PromethION |
 | Sample | the project's samples include each chosen value, **not necessarily in the same sample** | Cell line *HeLa* + Sex *female* also matches a project with a male HeLa sample and a female sample of another cell line |
-| Tag | the project has all chosen tags | |
+| Tag | the project has all chosen tags, or any of them with **Match any of the tags** | |
 
 Run filters check one run because run metadata is stored per run (`sra_metadata`). Sample attributes are stored summarised per project (`bioproject_attributes`), so they can't be tied to one sample; matching within a sample would need the per-run attributes loaded as a table.
 
@@ -138,7 +138,7 @@ The applied filters as chips (and accessions from the search box). Removing a ch
 
 ### Tags row
 
-- **Chosen tags** as blue chips, each removable. **Clear all** removes only the tags.
+- **Chosen tags** as blue chips, each removable, after "all of" or "any of" when there are two or more. **Clear all** removes only the tags (and turns **Match any of the tags** off).
 - **Suggested tags** (dashed, with a +): the tags most common among the search's top 2,000 results, each added with one click. Hovering shows the tag's type and how many of the top results have it. They leave out the organism, tags already chosen and tags found on only one project. They load after the results, so they never slow them down (`GET /search/tag-summary`).
 
 Each row is hidden when it has nothing to show.
@@ -147,17 +147,18 @@ Each row is hidden when it has nothing to show.
 
 | Column | Shows | Sort |
 | --- | --- | --- |
-| Match (text searches only) | Similarity to the search text, 0–1, and a green **Words** tag when the project contains all the words | default for text searches |
 | BioProject | BioProject (link to ENA) and SRA study (link to NCBI) | yes |
 | Title | Title, then the project's tags | |
 | Organism | | yes |
 | Experiments | Number of experiments | yes |
-| Publications | Number of publications | yes |
+| Publications | The number of publications in a green tag, darker for more: light for 1, medium for 2, dark for 3 or more; empty when there are none | yes, by number of publications |
 | Released | `release_date`; hover the header for its meaning | yes, newest first by default |
+
+Text searches are sorted best match first; clicking a column header sorts by that column instead. The match score isn't shown (`similarity` and `text_match` are in the API response; see [search.md](search.md#4-filters-sorting-and-paging)).
 
 Under each title, the project's tags show as grey chips, without the tag that repeats the organism. Tags in the Tags filter come first, in blue, and always show; the rest fill up to five, and **+N more** shows the others. Clicking a tag adds it to the Tags filter and searches at once.
 
-Clicking a row opens the project's details: description, organization with country, GEO accessions, a small table of publications (title, citation, PubMed / PMC / DOI links; it scrolls past four), and a link to the project's sequencing files from ENA. An open project and its details share a light blue background and a blue bar on the left.
+Clicking a row opens the project's details: description, organization with country, GEO accessions, a small table of publications (title, citation, PubMed / PMC / DOI links; it scrolls past four; missing titles and citations are fetched from PubMed by the browser, see [running.md](running.md#publication-titles-pubmed)), and a link to the project's sequencing files from ENA. An open project and its details share a light blue background and a blue bar on the left.
 
 Results are paged (10, 25, 50 or 100 per page; 25 by default).
 

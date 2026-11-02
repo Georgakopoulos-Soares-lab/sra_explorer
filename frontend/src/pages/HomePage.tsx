@@ -1,11 +1,14 @@
 import {
   ApartmentOutlined,
+  ClusterOutlined,
   ExperimentOutlined,
   FilterOutlined,
+  InfoCircleOutlined,
   LinkOutlined,
   SearchOutlined,
+  TagsOutlined,
 } from '@ant-design/icons'
-import { Button, Card, Skeleton, Statistic, Tag, Typography } from 'antd'
+import { Button, Card, Skeleton, Statistic, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { api, type Stats } from '../api'
@@ -14,27 +17,36 @@ import { PUBLICATION } from '../config'
 
 const { Title, Paragraph, Text } = Typography
 
-const FEATURES: { icon: ReactNode; title: string; text: string; soon?: boolean }[] = [
+const FEATURES: { icon: ReactNode; title: string; text: string }[] = [
   {
-    icon: <FilterOutlined />,
-    title: 'Filter projects',
-    text: 'Narrow down BioProjects by organism, data type, relevance, release date, size, publications and submitting organisation.',
+    icon: <SearchOutlined />,
+    title: 'Describe the data you need',
+    text: 'Type what you are looking for in plain language. Semantic and full-text search are combined, so you find projects that describe it in other words as well as those using your exact terms. Or paste BioProject and SRA study accessions.',
   },
   {
     icon: <ExperimentOutlined />,
+    title: 'Search by sample',
+    text: 'Filter by cell line, cell type, tissue, sex, disease, genotype or strain, treatment and ChIP target, taken from the attributes submitters gave their samples and cleaned up so that different spellings match.',
+  },
+  {
+    icon: <ClusterOutlined />,
     title: 'Search by how data was made',
-    text: 'Find projects with runs from a given assay, sequencing platform, instrument, library layout or sample country.',
+    text: 'Combine assay type, instrument, library layout, library selection and sequencing center. A project matches when one of its runs fits them all.',
+  },
+  {
+    icon: <FilterOutlined />,
+    title: 'Filters that guide you',
+    text: 'Also narrow by organism, release date, submitting organisation, size and publications. Each filter only offers values found in projects matching your other choices, with counts, so you see what is available before you search.',
+  },
+  {
+    icon: <TagsOutlined />,
+    title: 'Explore by tags',
+    text: 'Projects are tagged with the organisms, diseases, tissues, cell types, cell lines and chemicals they describe. Click a tag to find related projects, or add one of the tags common in your results.',
   },
   {
     icon: <LinkOutlined />,
     title: 'Go straight to the source',
-    text: 'Every result links to its BioProject page in ENA and its SRA study page at NCBI, and lists its FASTQ files with direct download links from ENA.',
-  },
-  {
-    icon: <SearchOutlined />,
-    title: 'Semantic search',
-    text: 'Describe the data you need in plain language and get the projects that match it best.',
-    soon: true,
+    text: 'Every result links to its BioProject page in ENA and its SRA study page at NCBI, shows its publications and GEO series, and lists its FASTQ files with direct download links from ENA.',
   },
 ]
 
@@ -45,11 +57,15 @@ const STEPS = [
   },
   {
     title: 'Combine',
-    text: 'Runs and projects are cleaned and linked through their SRA study accession in one PostgreSQL database.',
+    text: 'Runs and projects are linked through their SRA study accession in one PostgreSQL database. The sample attributes of over 42 million runs are cleaned and summarised per project.',
+  },
+  {
+    title: 'Enrich',
+    text: 'Each project\'s title and description are embedded with a biomedical language model for semantic search, and tag words are extracted from them.',
   },
   {
     title: 'Explore',
-    text: 'The search page queries that database, so filters across projects and runs work together.',
+    text: 'The search page combines text search with filters across projects, samples and runs, all working together.',
   },
 ]
 
@@ -58,6 +74,17 @@ const SOURCES = [
   { name: 'NCBI BioProject', url: 'https://www.ncbi.nlm.nih.gov/bioproject' },
   { name: 'European Nucleotide Archive (ENA)', url: 'https://www.ebi.ac.uk/ena' },
 ]
+
+interface StatItem {
+  label: string
+  value: number | null
+  suffix?: ReactNode
+  precision?: number
+  // A line under the number saying what it means.
+  note?: string
+  // Shown when hovering the info icon next to the label.
+  help?: string
+}
 
 function StatsRow() {
   const [stats, setStats] = useState<Stats | null>(null)
@@ -75,22 +102,66 @@ function StatsRow() {
   }, [])
 
   if (failed) return null
-  const items: [string, keyof Stats][] = [
-    ['BioProjects', 'bioprojects'],
-    ['SRA studies', 'studies'],
-    ['Samples', 'runs'],
-    ['Organisms', 'organisms'],
+  const samples = stats ? `${(stats.runs / 1e6).toFixed(1)} million` : ''
+  // Share of samples whose submitters recorded the attribute.
+  // Number of samples whose submitters recorded the attribute.
+  const share = (key: 'tissue' | 'cell_type' | 'cell_line', what: string): StatItem => {
+    return {
+      label: `Samples with a ${what}`,
+      value: stats?.[`${key}_samples`] ?? null,
+      note: `of all ${samples} samples have a ${what} recorded`,
+      help: `The number of sequencing runs whose sample description, as given by the submitter, names a ${what}. Submitters often leave it out, for example for environmental or bacterial samples, so it is well below the total number of samples. You can filter by ${what} on the search page.`,
+    }
+  }
+  // Studies are SRA studies; "Samples" counts sequencing runs.
+  const rows: StatItem[][] = [
+    [
+      { label: 'Studies', value: stats?.studies ?? null },
+      { label: 'Samples', value: stats?.runs ?? null },
+      { label: 'Publications', value: stats?.publications ?? null, help: 'Distinct publications linked to the studies, each counted once.' },
+    ],
+    [
+      { label: 'Assay types', value: stats?.assay_types ?? null, help: 'Distinct assay types of the runs, such as RNA-Seq, WGS or ChIP-Seq.' },
+      share('tissue', 'tissue'),
+      share('cell_type', 'cell type'),
+      share('cell_line', 'cell line'),
+    ],
   ]
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-      {items.map(([label, key]) => (
-        <Card key={key} size="small">
-          {stats ? (
-            <Statistic title={label} value={stats[key]} />
-          ) : (
-            <Skeleton active title={false} paragraph={{ rows: 2 }} />
-          )}
-        </Card>
+    <div className="flex flex-col gap-4">
+      {rows.map((items, i) => (
+        <div key={i} className={`grid grid-cols-2 gap-4 ${items.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
+          {items.map((item) => (
+            <Card key={item.label} size="small">
+              {stats ? (
+                <>
+                  <Statistic
+                    title={
+                      <span className="inline-flex items-center gap-1">
+                        {item.label}
+                        {item.help && (
+                          <Tooltip title={item.help}>
+                            <InfoCircleOutlined className="cursor-help text-gray-400" aria-label={item.help} />
+                          </Tooltip>
+                        )}
+                      </span>
+                    }
+                    value={item.value ?? '–'}
+                    suffix={item.value != null ? item.suffix : undefined}
+                    precision={item.value != null ? item.precision : undefined}
+                  />
+                  {item.note && item.value != null && (
+                    <Text type="secondary" className="text-xs">
+                      {item.note}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Skeleton active title={false} paragraph={{ rows: 2 }} />
+              )}
+            </Card>
+          ))}
+        </div>
       ))}
     </div>
   )
@@ -107,8 +178,8 @@ export default function HomePage() {
         </Title>
         <Paragraph className="mx-auto max-w-2xl text-lg text-gray-600">
           Find sequencing datasets in the NCBI Sequence Read Archive. SRAscout brings SRA run
-          metadata and BioProject records together, so you can search projects by what they
-          studied and how their data was sequenced.
+          metadata, sample attributes and BioProject records together, so you can describe the
+          data you need, or narrow it down by organism, sample, assay and how it was sequenced.
         </Paragraph>
         <div className="flex flex-wrap justify-center gap-3">
           <Button type="primary" size="large" icon={<SearchOutlined />} onClick={() => navigate('/search')}>
@@ -145,7 +216,7 @@ export default function HomePage() {
 
       <section className="mb-12">
         <Title level={3}>How it works</Title>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s, i) => (
             <Card key={s.title} size="small">
               <div className="mb-1 flex items-center gap-2 font-semibold">

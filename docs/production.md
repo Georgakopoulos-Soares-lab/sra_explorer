@@ -22,6 +22,7 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | `Automations/output/sra_metadata_schema.sql` | `sra_metadata` |
    | `Automations/output/bioproject_embeddings_schema.sql` | `bioproject_embeddings` |
    | `Automations/output/bioproject_attributes_schema.sql` | `bioproject_attributes`: sample attributes from `jattr` ([jattr-normalization.md](jattr-normalization.md)), for the sample filters |
+   | `Automations/output/bioproject_attributes_coverage_schema.sql` | `bioproject_attributes_coverage`: the share of samples with a tissue, cell type or cell line, for the home page ([jattr-normalization.md](jattr-normalization.md#coverage-on-the-home-page)) |
    | `Automations/TagWords/bioproject_tags_schema.sql` | `bioproject_tags`: tag words, the Tags filter and common tags ([bioproject-tags.md](bioproject-tags.md)). Drops `bioproject_fulltext`, recreated in step 3 |
 
 3. **Create the search objects**, after the tables are loaded:

@@ -120,7 +120,7 @@ The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_pub
 
 The text box at the top of the search page finds projects by accession: type one or more BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, separated by spaces or commas, and click **Search**. They combine with any filters.
 
-Any other text runs a hybrid search: a semantic search over the project embeddings and a full-text search for projects containing all the words, merged so projects found by both come first. Results are ordered best match first; the **Match** column shows each project's similarity, with a **Words** tag when it contains all the words. The box also accepts `"quoted phrases"`, `OR`, and `-word`. Clicking a column header sorts by that column instead. See [search.md](search.md) for how it works, its limits and tuning.
+Any other text runs a hybrid search: a semantic search over the project embeddings and a full-text search for projects containing all the words, merged so projects found by both come first. Results are ordered best match first. The box also accepts `"quoted phrases"`, `OR`, and `-word`. Clicking a column header sorts by that column instead. See [search.md](search.md) for how it works, its limits and tuning.
 
 ### Sequencing files (ENA)
 
@@ -129,6 +129,12 @@ Expanding a row on the search page shows how many runs the study has in ENA, wit
 All run and file data comes from the [ENA Portal API](https://www.ebi.ac.uk/ena/portal/api/) and is requested **by the user's browser, not the backend**, because ENA limits requests per client. The code is in `frontend/src/ena/api.ts`.
 
 ENA's file report can't be paged, so the files page loads the first 5,000 runs and offers the rest on request for studies up to 50,000 runs. For larger studies it links to ENA's full file report (TSV), which the browser downloads directly.
+
+### Publication titles (PubMed)
+
+Most publications linked to projects have only a PubMed ID in our data: 131,103 of 173,366 have no title. When a project's details open and it has PubMed publications missing a title or citation, the browser asks NCBI's [E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25499/) (`esummary`) for just those IDs, in one request, and fills in the blanks: title, citation ("Smith DR et al. · Mol Phylogenet Evol · 2014"), and the DOI and PMC links when they are missing. The cells show "Loading from PubMed…" meanwhile, and stay "—" if PubMed doesn't answer.
+
+Like ENA, these requests go **from the user's browser, not the backend**, because NCBI limits requests per client (3 a second without an API key). Requests are spaced at least 350 ms apart, and answers are kept for the session, so reopening a project or seeing the same paper again asks nothing. Projects without publications, or whose publications already have a title and citation, make no request. Values from our data are never overwritten. Publications with only a DOI or PMC ID aren't looked up. The code is in `frontend/src/ncbi/pubmed.ts`.
 
 ### Setting the DOI
 
@@ -151,9 +157,9 @@ The website's search page uses these endpoints, defined in `backend/app/search.p
 | `GET /search/facets/{field}`   | Dropdown options with counts for one filter, narrowed by the other filters passed with it |
 | `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism, sequencing center, tag and the sample attributes except sex. Tag matches carry their type in `group`. Narrowed by the other filters passed with it, like `/search/facets` |
 | `GET /search/tag-summary`      | The most common tags among a search's top results, for the Suggested tags in the Tags row above the results; same parameters as `/search/bioprojects` |
-| `GET /search/stats`            | Counts shown on the home page                                         |
+| `GET /search/stats`            | Counts shown on the home page: studies, samples (runs), distinct publications, distinct assay types, and the % of samples with a tissue, cell type or cell line recorded (from `bioproject_attributes_coverage`; see [jattr-normalization.md](jattr-normalization.md#coverage-on-the-home-page)). Cached for an hour and computed at startup, since it takes a few seconds |
 
-All filter parameters are listed at <http://localhost:8000/docs>. Within one filter, several values match any of them, except `tag`, where a project must have all of them. Different filters must all match.
+All filter parameters are listed at <http://localhost:8000/docs>. Within one filter, several values match any of them, except `tag`, where a project must have all of them unless `tag_any=true`. Different filters must all match.
 
 Each filter's options are narrowed by the other filters passed with the request. See [filters.md](filters.md#filters-narrow-each-other).
 
