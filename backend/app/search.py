@@ -106,6 +106,33 @@ T = Table(
     Column("document", TSVECTOR),
 )
 
+# Not part of models.Base either; see backend/sql/bioproject_attribute_values.sql.
+A = Table(
+    "bioproject_attribute_values",
+    MetaData(),
+    Column("bioproject", Text),
+    Column("field", Text),
+    Column("value", Text),
+    Column("value_key", Text),
+)
+
+# Sample attribute filters: field in bioproject_attributes' JSON (and filter
+# name) -> what it holds. Aggregated per project by jattr_normalize.py, so a
+# project matches when any of its samples has the value; several fields need
+# not be met by the same sample. Matching ignores case. organism has its own
+# filter, and assay_type is the run filter of the same name. Must match the
+# field list in backend/sql/bioproject_attribute_values.sql.
+ATTRIBUTE_FIELDS = {
+    "cell_line": "Sample cell line, e.g. HeLa, MCF7",
+    "cell_type": "Sample cell type, e.g. macrophage",
+    "tissue": "Sample tissue or body site, e.g. liver, blood",
+    "sex": "Sample sex: male, female, mixed, hermaphrodite, intersex, asexual or neuter",
+    "disease_state": "Sample disease or health state",
+    "genotype_or_strain": "Sample genotype, strain, cultivar or breed, e.g. C57BL/6",
+    "treatment_or_growth_condition": "Sample treatment or growth condition",
+    "molecular_target": "ChIP antibody or target, e.g. H3K27ac",
+}
+
 _relations_checked: dict[str, tuple[float, bool]] = {}
 
 
@@ -166,6 +193,16 @@ class SearchFilters(BaseModel):
     # Tag words (bioproject_tags). Unlike the other lists, a project must have
     # every selected tag; projects without tags never match.
     tag: list[str] = Field(default_factory=list)
+
+    # Sample attributes (ATTRIBUTE_FIELDS); case-insensitive.
+    cell_line: list[str] = Field(default_factory=list)
+    cell_type: list[str] = Field(default_factory=list)
+    tissue: list[str] = Field(default_factory=list)
+    sex: list[str] = Field(default_factory=list)
+    disease_state: list[str] = Field(default_factory=list)
+    genotype_or_strain: list[str] = Field(default_factory=list)
+    treatment_or_growth_condition: list[str] = Field(default_factory=list)
+    molecular_target: list[str] = Field(default_factory=list)
 
     release_from: Optional[date] = None
     release_to: Optional[date] = None
@@ -237,6 +274,19 @@ def build_conditions(f: SearchFilters) -> list:
 
     if f.tag:
         conditions.append(exists().where(G.bioproject == B.bioproject, tag_array(G.tags).contains(f.tag)))
+
+    attributes = {name: getattr(f, name) for name in ATTRIBUTE_FIELDS if getattr(f, name)}
+    if attributes and not has_relation("bioproject_attribute_values"):
+        raise HTTPException(
+            status_code=503,
+            detail="Sample filters are unavailable: bioproject_attribute_values has not been created.",
+        )
+    for name, values in attributes.items():
+        conditions.append(exists().where(
+            A.c.bioproject == B.bioproject,
+            A.c.field == name,
+            A.c.value_key.in_([v.lower() for v in values]),
+        ))
 
     for prefix, column in DATE_FIELDS.items():
         start, end = getattr(f, f"{prefix}_from"), getattr(f, f"{prefix}_to")
@@ -446,6 +496,9 @@ FACET_FIELDS = [
     "libraryselection", "sample_country",
 ]
 SUGGEST_FIELDS = ["organism", "organization", "journals", "run_organism", "center_name", "tag"]
+# Sample attributes: sex has few values (a dropdown), the rest are searched.
+FACET_FIELDS.append("sex")
+SUGGEST_FIELDS += [name for name in ATTRIBUTE_FIELDS if name != "sex"]
 
 CACHE_SECONDS = 3600
 _cache: dict[str, tuple[float, tuple[tuple[str, int], ...]]] = {}
@@ -466,6 +519,11 @@ def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[
     cached = _cache.get(key)
     if cached and cached[0] > time.monotonic():
         return cached[1]
+    if name in ATTRIBUTE_FIELDS:
+        values = attribute_values(name)
+        if values:
+            _cache[key] = (time.monotonic() + CACHE_SECONDS, values)
+        return values
 
     if name in RUN_FIELDS and has_study_facets():
         column = F.c[RUN_FIELDS[name][1]]
@@ -493,6 +551,25 @@ def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[
     if values:
         _cache[key] = (time.monotonic() + CACHE_SECONDS, values)
     return values
+
+
+def attribute_values(name: str) -> tuple[tuple[str, int], ...]:
+    """A sample attribute's values with their project counts, most common first.
+
+    Spellings differing only in case count as one value, shown in its most
+    common spelling. Empty without bioproject_attribute_values.
+    """
+    if not has_relation("bioproject_attribute_values"):
+        return ()
+    n = func.count().label("n")
+    stmt = (
+        select(func.mode().within_group(A.c.value).label("value"), n)
+        .where(A.c.field == name)
+        .group_by(A.c.value_key)
+        .order_by(n.desc(), A.c.value_key)
+    )
+    with engine.connect() as conn:
+        return tuple((row.value, row.n) for row in conn.execute(stmt))
 
 
 _tag_cache: tuple[float, tuple[tuple[str, int, Optional[str]], ...], dict[str, Optional[str]]] = (0, (), {})

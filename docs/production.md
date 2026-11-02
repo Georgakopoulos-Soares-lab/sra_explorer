@@ -21,7 +21,7 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | `Automations/output/bioprojects_schema.sql` | `bioprojects` |
    | `Automations/output/sra_metadata_schema.sql` | `sra_metadata` |
    | `Automations/output/bioproject_embeddings_schema.sql` | `bioproject_embeddings` |
-   | `Automations/output/bioproject_attributes_schema.sql` | `bioproject_attributes`: sample attributes from `jattr` ([jattr-normalization.md](jattr-normalization.md)). Not used by the API yet |
+   | `Automations/output/bioproject_attributes_schema.sql` | `bioproject_attributes`: sample attributes from `jattr` ([jattr-normalization.md](jattr-normalization.md)), for the sample filters |
    | `Automations/TagWords/bioproject_tags_schema.sql` | `bioproject_tags`: tag words, the Tags filter and common tags ([bioproject-tags.md](bioproject-tags.md)). Drops `bioproject_fulltext`, recreated in step 3 |
 
 3. **Create the search objects**, after the tables are loaded:
@@ -30,6 +30,7 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | --- | --- | --- |
    | `backend/sql/study_facets.sql` | `study_facets` view and its indexes | a few minutes |
    | `backend/sql/release_date.sql` (after `study_facets.sql`) | `bioprojects.release_date` and `bioprojects_release_date_idx` | about 35 seconds |
+   | `backend/sql/bioproject_attribute_values.sql` (after `bioproject_attributes` is loaded) | `bioproject_attribute_values` view and its indexes, for the sample filters | about 15 seconds |
    | `backend/sql/bioproject_fulltext.sql` (after `bioproject_tags` is loaded) | `bioproject_fulltext` view and its indexes | about a minute |
 
 4. **Run `ANALYZE`** so the planner has statistics (`bioproject_fulltext.sql` already analyzes its view):
@@ -77,6 +78,7 @@ Sizes are from the development database (670,720 bioproject rows, 669,736 embedd
 | `bioproject_fulltext` view | `bioproject_fulltext.sql` | Full-text half of the hybrid text search | Text searches are semantic only |
 | `bioproject_fulltext_document_idx` (GIN) | `bioproject_fulltext.sql` | Finding projects that contain the search words (142 MB) | — |
 | `bioproject_fulltext_bioproject_idx` (unique) | `bioproject_fulltext.sql` | `REFRESH ... CONCURRENTLY` (20 MB) | The view can't be refreshed without locking it |
+| `bioproject_attribute_values` view | `bioproject_attribute_values.sql` | The sample filters (cell line, tissue, sex, ...) and their dropdown values (349 MB with indexes) | Sample filter dropdowns are empty and sample filters return an error |
 
 Don't create a full-text index directly on `bioprojects`: search reads the stored text from `bioproject_fulltext`, and an expression index on `bioprojects` would only add 145 MB that nothing uses.
 
@@ -90,6 +92,7 @@ The schema files drop and recreate their tables. Postgres won't drop a table tha
 | `sra_metadata` | `DROP MATERIALIZED VIEW IF EXISTS study_facets;` | Run `study_facets.sql`, then `release_date.sql` |
 | `bioproject_embeddings` | Nothing | Nothing: the schema file recreates the HNSW index |
 | `bioproject_tags` | Nothing: the schema file drops `bioproject_fulltext` itself | Run `bioproject_fulltext.sql` |
+| `bioproject_attributes` | Nothing: the schema file drops `bioproject_attribute_values` itself | Run `bioproject_attribute_values.sql` |
 
 Rebuild the embeddings (`Automations/create_embeddings.py`) whenever `bioprojects` gets new projects or changed text; projects without an embedding can only be found through full-text search.
 

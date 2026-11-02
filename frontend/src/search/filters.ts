@@ -25,11 +25,31 @@ export interface FilterSection {
 
 export const FILTER_SECTIONS: FilterSection[] = [
   {
+    // Kept as 'organism' so the panel still opens on it.
     key: 'organism',
-    title: 'Organism',
+    title: 'Organism, samples and sequencing',
+    hint: 'Run filters (assay type, platform to sequencing center) need one run matching them all. Sample filters (cell line to ChIP target) match when the project\'s samples include each value, not necessarily in the same sample.',
     filters: [
       { kind: 'select', key: 'supergroup', label: 'Supergroup' },
       { kind: 'suggest', key: 'organism', label: 'Organism', scopedBy: 'supergroup' },
+      { kind: 'select', key: 'assay_type', label: 'Assay type' },
+      // Sample attributes, from bioproject_attributes (the runs' jattr, summarised per project).
+      { kind: 'suggest', key: 'cell_line', label: 'Cell line' },
+      { kind: 'suggest', key: 'cell_type', label: 'Cell type' },
+      { kind: 'suggest', key: 'tissue', label: 'Tissue' },
+      { kind: 'select', key: 'sex', label: 'Sex' },
+      { kind: 'suggest', key: 'disease_state', label: 'Disease' },
+      { kind: 'suggest', key: 'genotype_or_strain', label: 'Genotype or strain' },
+      { kind: 'suggest', key: 'treatment_or_growth_condition', label: 'Treatment or condition' },
+      { kind: 'suggest', key: 'molecular_target', label: 'ChIP target' },
+      // Run filters (study_facets).
+      { kind: 'select', key: 'platform', label: 'Platform' },
+      { kind: 'select', key: 'instrument', label: 'Instrument' },
+      { kind: 'select', key: 'librarylayout', label: 'Library layout' },
+      { kind: 'select', key: 'libraryselection', label: 'Library selection' },
+      { kind: 'suggest', key: 'center_name', label: 'Sequencing center' },
+      // Same date as the results table's Released column.
+      { kind: 'dateRange', key: 'release', label: 'Released' },
     ],
   },
   {
@@ -37,22 +57,6 @@ export const FILTER_SECTIONS: FilterSection[] = [
     title: 'Tags',
     hint: 'Projects with all the chosen tags. Only some projects have tags so far, so this leaves out projects without them.',
     filters: [{ kind: 'suggest', key: 'tag', label: 'Tag' }],
-  },
-  {
-    key: 'sequencing',
-    title: 'Sequencing runs',
-    hint: 'Shows projects that have a run matching all of these.',
-    filters: [
-      { kind: 'select', key: 'assay_type', label: 'Assay type' },
-      { kind: 'select', key: 'platform', label: 'Platform' },
-      { kind: 'select', key: 'instrument', label: 'Instrument' },
-      { kind: 'select', key: 'librarysource', label: 'Library source' },
-      { kind: 'select', key: 'librarylayout', label: 'Library layout' },
-      { kind: 'select', key: 'libraryselection', label: 'Library selection' },
-      { kind: 'suggest', key: 'center_name', label: 'Sequencing center' },
-      // Same date as the results table's Released column.
-      { kind: 'dateRange', key: 'release', label: 'Released' },
-    ],
   },
   {
     key: 'submitter',

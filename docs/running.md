@@ -169,6 +169,16 @@ docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/relea
 
 Tag words under each result, the Tags filter and the Tags row above the results come from `bioproject_tags`, loaded with `Automations/TagWords/bioproject_tags_schema.sql`. That file drops `bioproject_fulltext`, so run `bioproject_fulltext.sql` (below) after it. Without the table the API creates it empty at startup, and the site works without tags. See [bioproject-tags.md](bioproject-tags.md).
 
+### Sample filters need the `bioproject_attribute_values` view
+
+The sample filters (cell line, tissue, sex, ...) read `bioproject_attribute_values`, a materialized view built from `bioproject_attributes`. Load the table with `Automations/output/bioproject_attributes_schema.sql`, then create the view (about 15 seconds):
+
+```bash
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/bioproject_attribute_values.sql
+```
+
+Without it the sample filters' dropdowns are empty and searches using them return an error; everything else works. See [jattr-normalization.md](jattr-normalization.md#searching-by-sample-attributes).
+
 ### Text search needs the `bioproject_fulltext` view
 
 The full-text half of the search box's text search reads from `bioproject_fulltext`, a materialized view with one row per BioProject holding its searchable text and a full-text index. Without it, text searches are semantic only.

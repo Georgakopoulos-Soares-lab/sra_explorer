@@ -17,6 +17,7 @@ from . import schemas
 from .database import get_db
 from .rate_limit import WINDOW_SECONDS, rate_limit
 from .search import (
+    ATTRIBUTE_FIELDS,
     B,
     DATE_FIELDS,
     FACET_FIELDS,
@@ -51,6 +52,7 @@ LIST_FILTER_HELP = {
     "organization": "Submitting organisation",
     "journals": "Journal of a linked publication",
     "tag": "Tag word (organism, disease, tissue, cell type, ...); a project must have all given tags",
+    **ATTRIBUTE_FIELDS,
     "assay_type": "Run assay type, e.g. RNA-Seq, WGS",
     "platform": "Run platform, e.g. ILLUMINA, OXFORD_NANOPORE",
     "instrument": "Run instrument model",

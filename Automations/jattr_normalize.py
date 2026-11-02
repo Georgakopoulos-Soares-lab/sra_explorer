@@ -21,6 +21,9 @@ at most MAX_VALUES_OUT values. `n_runs` is the number of runs in the project.
 Usage:
   python jattr_normalize.py [--input FILE] [--out-dir DIR] [--workers N] [--chunk-mb MB]
                             [--per-run FILE]   # also write one row per run: acc, bioproject, JSON
+  python jattr_normalize.py --reclean FILE [--out-dir DIR]
+      # apply the value cleaning (NULL_VALUES, POST) to an existing bioproject_attributes.tsv,
+      # in seconds, without reading sra_metadata_all.tsv again
 """
 
 import argparse
@@ -82,8 +85,13 @@ NULL_VALUES = {
     "missing: control sample", "missing: sample group", "missing: synthetic construct",
     "missing: lab stock", "missing: third party data", "missing: data agreement established pre-2023",
     "missing: endangered species", "missing: human-identifiable",
+    "unk", "undefined", "not collect", "not application", "not aplicable", "unknown sex",
 }
+# Prefixes that also mean "no information": "missing: ...", "not available: not collected".
+NULL_PREFIXES = ("missing:", "not available:", "not applicable:", "not collected:")
 
+# sex is reduced to these values; anything else is dropped.
+SEXES = {"male", "female", "mixed", "hermaphrodite", "intersex", "asexual", "neuter"}
 SEX_MAP = {
     "male": "male", "m": "male", "males": "male", "man": "male", "boy": "male", "xy": "male",
     "female": "female", "f": "female", "females": "female", "woman": "female", "girl": "female", "xx": "female",
@@ -92,6 +100,11 @@ SEX_MAP = {
     "mixture": "mixed", "pooled male and female": "mixed", "pooled male and female samples": "mixed",
     "hermaphrodite": "hermaphrodite", "intersex": "intersex", "asexual": "asexual",
     "neuter": "neuter", "not applicable": None, "n/a": None, "unknown": None, "not determined": None,
+    "femal": "female", "femle": "female", "men": "male", "46,xy": "male", "46,xx": "female",
+    "mix": "mixed", "mixed sex": "mixed", "both mixed": "mixed",
+    "hermaphroditic": "hermaphrodite", "monoecious": "hermaphrodite", "monecious": "hermaphrodite",
+    "bisexual": "hermaphrodite", "hermaphrodite and monoecious": "hermaphrodite",
+    "hermaphrodite monoecious": "hermaphrodite", "asexual morph": "asexual", "gelding": "neuter",
 }
 
 _WS = re.compile(r"\s+")
@@ -108,13 +121,25 @@ def clean_value(v):
     if v is None or isinstance(v, bool):
         return None
     s = _WS.sub(" ", str(v)).strip()
-    if s.lower() in NULL_VALUES or s.lower().startswith("missing:"):
+    if is_null(s):
         return None
     return s
 
 
+def is_null(s):
+    """Whether a value means 'no information'. Underscores and hyphens count as
+    spaces ("not_applicable"), and a numbered placeholder counts as its base
+    ("not applicable3"), but a bare number is a value (an age)."""
+    low = s.lower()
+    key = re.sub(r"[_-]+", " ", low).strip()
+    base = re.sub(r"[\d'\".:\s]+$", "", key)
+    return (low in NULL_VALUES or key in NULL_VALUES or (base != key and base and base in NULL_VALUES)
+            or key.startswith(NULL_PREFIXES))
+
+
 def normalize_sex(s):
-    low = s.lower().strip()
+    """One of SEXES, or None: mating types, numbers and other values are dropped."""
+    low = re.sub(r"[_-]+", " ", s.lower()).strip()
     if low in SEX_MAP:
         return SEX_MAP[low]
     has_m = re.search(r"\bmales?\b|\bm\b", low) is not None
@@ -125,9 +150,7 @@ def normalize_sex(s):
         return "female"
     if has_m:
         return "male"
-    if re.fullmatch(r"[\d.\s]+", low):   # a number is not a sex
-        return None
-    return low
+    return low if low in SEXES else None
 
 
 def normalize_age(s):
@@ -152,7 +175,128 @@ def normalize_target(s):
     return clean_value(s)
 
 
-POST = {"sex": normalize_sex, "age": normalize_age, "molecular_target": normalize_target}
+IRREGULAR_PLURALS = {
+    "leaves": "leaf", "testes": "testis", "ovaries": "ovary", "mice": "mouse", "teeth": "tooth",
+    "feet": "foot", "calves": "calf", "lice": "louse", "geese": "goose", "children": "child",
+    "women": "woman", "men": "man",
+    "leave": "leaf",  # a common wrong singular of "leaves" in tissue
+}
+# Words ending in "s" that are not plurals (or whose singular is not used).
+NOT_PLURAL = (
+    "ss", "us", "is", "ous", "ys", "ics", "itis", "osis", "feces", "faeces", "pancreas", "lens",
+    "iris", "series", "species", "diabetes", "herpes", "ascites", "bacteria", "fungi", "sepsis",
+    "biceps", "triceps", "aureus", "ans", "iens", "cortex", "hepatopancreas",
+)
+
+
+def singular(value):
+    """'macrophages' -> 'macrophage', 'T cells' -> 'T cell', 'Leaves' -> 'Leaf';
+    'testis', 'feces', 'pancreas' and acronyms or names ('PBMCs', 'HeLa') are kept."""
+    words = value.split(" ")
+    last = words[-1]
+    # Only plain words, lowercase or Title-case: capitals further in mean a name.
+    if not last.isalpha() or not last[1:].islower() or len(last) < 4:
+        return value
+    low = last.lower()
+    if low in IRREGULAR_PLURALS:
+        fixed = IRREGULAR_PLURALS[low]
+        last = fixed.capitalize() if last[0].isupper() else fixed
+    elif not low.endswith("s") or low.endswith(NOT_PLURAL):
+        return value
+    elif last.endswith("ies"):
+        last = last[:-3] + "y"
+    elif last.endswith(("ches", "shes", "xes", "sses")):
+        last = last[:-2]
+    else:
+        last = last[:-1]
+    return " ".join(words[:-1] + [last])
+
+
+_WILD_TYPE = re.compile(r"(wt|wild[\s_-]?type|wilde type)(\s*\(wt\)|\s+genotype|\s+control)?", re.I)
+
+
+def normalize_genotype(s):
+    """The many spellings of wild type ('WT', 'wildtype', 'wild-type (WT)', ...) -> 'wild type'.
+    Values naming a strain as well ('wild type Col-0') are kept as submitted."""
+    return "wild type" if _WILD_TYPE.fullmatch(s) else s
+
+
+HOST_SYNONYMS = {
+    "human": "Homo sapiens", "humans": "Homo sapiens", "mouse": "Mus musculus", "mice": "Mus musculus",
+    "rat": "Rattus norvegicus", "rats": "Rattus norvegicus", "chicken": "Gallus gallus",
+    "pig": "Sus scrofa", "pigs": "Sus scrofa", "swine": "Sus scrofa", "cattle": "Bos taurus",
+    "cow": "Bos taurus", "cows": "Bos taurus", "bovine": "Bos taurus", "sheep": "Ovis aries",
+    "goat": "Capra hircus", "horse": "Equus caballus", "dog": "Canis lupus familiaris",
+    "cat": "Felis catus", "rice": "Oryza sativa", "maize": "Zea mays", "corn": "Zea mays",
+    "wheat": "Triticum aestivum", "tomato": "Solanum lycopersicum",
+}
+# Submitted as a host but not one: environments and overly broad groups.
+NOT_HOSTS = {
+    "soil", "water", "environment", "environmental", "sediment", "laboratory", "bacteria", "plant",
+    "plants", "air", "seawater", "sea water", "freshwater", "wastewater", "sewage", "marine",
+    "animal", "animals", "food", "not applicable",
+}
+
+
+def normalize_host(s):
+    """Common names -> species ('mice' -> 'Mus musculus'); environments ('soil') dropped."""
+    low = s.lower()
+    if low in NOT_HOSTS:
+        return None
+    return HOST_SYNONYMS.get(low, s)
+
+
+POST = {
+    "sex": normalize_sex,
+    "age": normalize_age,
+    "molecular_target": normalize_target,
+    "tissue": singular,
+    "cell_type": singular,
+    "genotype_or_strain": normalize_genotype,
+    "host": normalize_host,
+}
+
+
+def reclean_values(field, values):
+    """Apply a field's cleaning to an already aggregated value list (most frequent
+    first): drops nulls and merges values that clean to the same text, keeping
+    the first (most frequent) position. Used by --reclean."""
+    out, seen = [], set()
+    for v in values:
+        v = clean_value(v)
+        if v is not None and POST.get(field):
+            v = POST[field](v)
+        if v is None or v.lower() in seen:
+            continue
+        seen.add(v.lower())
+        out.append(v)
+    return out
+
+
+def reclean(path, out_path):
+    """--reclean: rewrite an existing bioproject_attributes.tsv with the current cleaning rules."""
+    changed = dropped = rows = 0
+    tmp = out_path.with_suffix(".tmp")
+    with open(path, encoding="utf-8") as fin, open(tmp, "w", encoding="utf-8") as fout:
+        fout.write(fin.readline())
+        for line in fin:
+            project, _, text = line.rstrip("\n").partition("\t")
+            rec = json.loads(text)
+            new = {}
+            for fld, val in rec.items():
+                if not isinstance(val, list) or FIELDS.get(fld, {}).get("column"):
+                    new[fld] = val
+                    continue
+                vals = reclean_values(fld, val)
+                if vals:
+                    new[fld] = vals
+                else:
+                    dropped += 1
+            changed += new != rec
+            rows += 1
+            fout.write(f"{project}\t{json.dumps(new, ensure_ascii=False)}\n")
+    tmp.replace(out_path)
+    print(f"reclean: {rows:,} projects, {changed:,} changed, {dropped:,} fields emptied -> {out_path}")
 
 
 def _unquote(field: bytes) -> bytes:
@@ -293,7 +437,15 @@ def main():
     ap.add_argument("--chunk-mb", type=int, default=256)
     ap.add_argument("--per-run", type=Path, default=None,
                     help="also write one row per run (acc, bioproject, JSON) to this file")
+    ap.add_argument("--reclean", type=Path, default=None,
+                    help="only re-apply the value cleaning to this bioproject_attributes.tsv, "
+                         "writing <out-dir>/bioproject_attributes.tsv")
     a = ap.parse_args()
+
+    if a.reclean:
+        a.out_dir.mkdir(parents=True, exist_ok=True)
+        reclean(a.reclean, a.out_dir / "bioproject_attributes.tsv")
+        return
 
     with open(a.input, "rb") as f:
         names = f.readline().rstrip(b"\r\n").decode().split("\t")

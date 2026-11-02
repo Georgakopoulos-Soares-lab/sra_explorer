@@ -89,8 +89,11 @@ Run and project percentages differ because a few very large pathogen-surveillanc
 ### 3. Clean the values
 
 - Lists (`["female"]`) are unwrapped to their first non-empty element.
-- Whitespace is collapsed. Values that mean "no information" are dropped: `NA`, `N/A`, `none`, `missing`, `not collected`, `not provided`, `not applicable`, `unknown`, `restricted access`, anything starting with `missing:` and about 40 similar spellings (`NULL_VALUES` in the script).
-- `sex` is mapped to `male`, `female`, `mixed`, `hermaphrodite`, `intersex`, `neuter` or `asexual`. Abbreviations (`M`, `F`), plurals and combinations (`male and female`) are handled. A bare number is dropped.
+- Whitespace is collapsed. Values that mean "no information" are dropped: `NA`, `N/A`, `none`, `missing`, `not collected`, `not provided`, `not applicable`, `unknown`, `unk`, `undefined`, `restricted access`, anything starting with `missing:` or `not available:`, and about 45 similar spellings (`NULL_VALUES` and `NULL_PREFIXES` in the script). Underscores and hyphens count as spaces (`not_applicable`), and numbered placeholders count as their base (`not applicable3`), but a bare number is kept, since it can be an age.
+- `sex` is reduced to `male`, `female`, `mixed`, `hermaphrodite`, `intersex`, `neuter` or `asexual`; anything else is dropped. Abbreviations (`M`, `F`), misspellings (`femal`), plurals, combinations (`male and female`) and synonyms (`monoecious` → `hermaphrodite`, `gelding` → `neuter`, `46,XY` → `male`) are mapped. Mating types (`mat a`), numbers and labels such as `control sample` are dropped.
+- `tissue` and `cell_type` are made singular, so that `leaves`/`leaf`, `macrophages`/`macrophage` and `T cells`/`T cell` are one value. Only the last word changes, and only when it is a plain lowercase or Title-case word: acronyms and names keep their form (`PBMCs`, `HeLa`), and words that only look plural are kept (`testis`, `feces`, `pancreas`, `thymus`; `NOT_PLURAL` in the script). Irregular plurals are mapped (`testes` → `testis`, `ovaries` → `ovary`), and `leave`, a frequent wrong singular, becomes `leaf`. Fully capitalised words (`LEAVES`, 18 projects) are left alone, because the rule can't tell them from acronyms.
+- `genotype_or_strain`: the many spellings of wild type (`WT`, `wildtype`, `wild-type`, `wild_type`, `wild type genotype`, `Wild type (WT)`, `wild type control`, ...) become `wild type`, merging about 41,000 projects into one value. Values that also name a strain (`wild type Col-0`) are kept as submitted.
+- `host`: common names become the species (`mouse`, `mice` → `Mus musculus`; `human` → `Homo sapiens`; `cattle`, `cow`, `bovine` → `Bos taurus`; `HOST_SYNONYMS`), and values that are environments or broad groups, not hosts, are dropped (`soil`, `water`, `environment`, `sediment`, `plant`, `bacteria`; `NOT_HOSTS`).
 - `age` keeps the submitted text, except that `78.0`, `78 years`, `78 yo` become `78`. Values such as `P56`, `E14.5`, `3 months`, `>=50` or `adult` are kept as they are.
 - `molecular_target` keeps only the part before the first comma, semicolon or bracket, so vendor and catalogue details are removed (`H3K27ac, Abcam, ab4729, Lot: ...` becomes `H3K27ac`). A leading `anti-` is removed and histone marks are written in one form (`H3K27Ac` becomes `H3K27ac`).
 - Other fields are kept verbatim. The original case is preserved, but within a project spellings that differ only in case are merged and the most common spelling is shown (`Adult` and `adult` become one value).
@@ -130,7 +133,49 @@ WHERE attributes @> '{"sex": ["female"], "tissue": ["liver"]}';
 SELECT attributes->'tissue' FROM bioproject_attributes WHERE bioproject = 'PRJDB10518';
 ```
 
-Containment matches values exactly, including case, so `"tissue": ["Liver"]` and `["liver"]` are different. The file loads only the per-BioProject output; the optional per-run file (`--per-run`, about 5 GB) has no table. The backend doesn't use this table yet.
+Containment matches values exactly, including case, so `"tissue": ["Liver"]` and `["liver"]` are different. The file loads only the per-BioProject output; the optional per-run file (`--per-run`, about 5 GB) has no table. The backend model is `BioprojectAttributes` in `backend/app/models.py`.
+
+## Searching by sample attributes
+
+The sample filters in the search page's **Organism, samples and sequencing** filter section, and the same parameters on `/search/bioprojects` and `/v1/projects`, filter projects by these fields. The user can combine them with each other and with every other filter, for example RNA-Seq (Assay type) + cell line `HeLa` + sex `female`: 129 projects, in about half a second.
+
+| Filter (parameter) | Field | Control |
+| --- | --- | --- |
+| Cell line (`cell_line`) | `cell_line` | type-ahead |
+| Cell type (`cell_type`) | `cell_type` | type-ahead |
+| Tissue (`tissue`) | `tissue` | type-ahead |
+| Sex (`sex`) | `sex` | dropdown (7 values) |
+| Disease (`disease_state`) | `disease_state` | type-ahead |
+| Genotype or strain (`genotype_or_strain`) | `genotype_or_strain` | type-ahead |
+| Treatment or condition (`treatment_or_growth_condition`) | `treatment_or_growth_condition` | type-ahead |
+| ChIP target (`molecular_target`) | `molecular_target` | type-ahead |
+
+The other fields have no filter:
+
+- `organism` has its own filter, and `assay_type` is the existing Assay type filter (in the same section), which reads the same top-level column per run.
+- `age`: mostly bare numbers with no unit (about 126,000 values such as `8`, which can mean weeks or years), so a choice would mix unrelated samples.
+- `developmental_stage` and `host`: left out to keep the section short; they stay in the JSON.
+- `source_name`: GEO's free-text sample label, which mostly repeats the tissue (85–90% of projects with source name `liver`, `lung`, `brain`, `bone marrow` or `spleen` have the same tissue). It is used only as a tissue fallback; see the view below.
+
+### How matching works
+
+- **Case is ignored.** The same value is spelled differently across projects (`liver` in 6,927 projects, `Liver` in 4,391, `LIVER` in 110), so `hela`, `HeLa` and `HELA` all match the same 1,578 projects. The dropdowns list each value once, in its most common spelling, with its number of projects.
+- **Several values in one filter match any of them** (`tissue=liver&tissue=blood`), and different filters must all match, as for the other filters.
+- **Matching is per project, not per sample.** The attributes are aggregated per BioProject, so a project with a female HeLa sample matches `cell_line=HeLa&sex=female`, but so does a project with a male HeLa sample and a female sample of another cell line. The same applies across Assay type and the sample filters. Matching within one sample would need the per-run output (`--per-run`) loaded as a table.
+- **Values are matched whole.** Choose values from the type-ahead: `HeLa` doesn't match `HeLa S3` or `HeLa cells`, which are listed separately; choose several to include them.
+- **Tissue includes GEO source names** for projects that give no tissue, when the source name is a known tissue (see below). This adds about 12,000 projects to the Tissue filter.
+
+### The `bioproject_attribute_values` view
+
+Filtering on the JSON directly can't ignore case and would read every project's JSON, so the filters read a materialized view built from it by `backend/sql/bioproject_attribute_values.sql`: one row per project, field and value, for the fields with a filter only (1.7 million rows, 349 MB with indexes, about 15 seconds to build), with the lowercased value as `value_key` and an index on `(field, value_key, bioproject)`. Its field list must match `ATTRIBUTE_FIELDS` in `backend/app/search.py`.
+
+The view also fills in **tissue from the GEO source name**: a project with no `tissue` gets its `source_name` values as tissues, but only those that are already a known tissue, meaning used as a tissue by at least 20 projects. So `Liver` becomes a tissue, while labels such as `WT_rep1` or `cell line` don't. The JSON itself is not changed.
+
+```bash
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/bioproject_attribute_values.sql
+```
+
+Create it after loading `bioproject_attributes`, and refresh it after loading new data (`REFRESH MATERIALIZED VIEW CONCURRENTLY bioproject_attribute_values`). Without it, the sample dropdowns are empty and a search using a sample filter returns an error saying the view is missing. The other filters are unaffected. Dropdown values are cached for an hour, like the other filters' values.
 
 ## Running it again
 
@@ -148,6 +193,21 @@ python3 jattr_key_counts.py
 # 2. Rebuild bioproject_attributes.tsv (full rebuild; there is no incremental mode).
 python3 jattr_normalize.py
 ```
+
+To apply changed cleaning rules (`NULL_VALUES`, `SEX_MAP`, `POST` and the functions it lists) without re-reading the 98 GB file, re-clean the existing output. It takes about 20 seconds, and running it again changes nothing:
+
+```bash
+python3 jattr_normalize.py --reclean output/bioproject_attributes.tsv   # rewrites it in place
+```
+
+Then reload the table and rebuild the view:
+
+```bash
+psql -d <db> -f output/bioproject_attributes_schema.sql          # drops the view too
+psql -d <db> -f ../backend/sql/bioproject_attribute_values.sql
+```
+
+`--reclean` cleans each project's stored list of values, merging those that clean to the same text. A full run applies the same rules to every run before counting, so the order of values can differ slightly between the two; the values are the same. On the May 2026 data, re-cleaning changed 102,623 projects and emptied 6,331 fields that held only placeholder values.
 
 Useful options:
 

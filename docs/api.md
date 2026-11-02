@@ -59,6 +59,7 @@ Common parameters (`GET /v1/filters` lists all of them):
 | --- | --- |
 | `accession` | `PRJNA169753`, `SRP079428` (repeatable, any case) |
 | `organism`, `supergroup`, `data_types` | `organism=Homo sapiens` |
+| `cell_line`, `cell_type`, `tissue`, `sex`, `disease_state`, `genotype_or_strain`, `treatment_or_growth_condition`, `molecular_target` | `cell_line=HeLa&sex=female` (sample attributes, case-insensitive; values from `/v1/filters/{name}`; see [jattr-normalization.md](jattr-normalization.md#searching-by-sample-attributes)) |
 | `tag` | `tag=osteoarthritis` (values from `/v1/filters/tag?q=...`; see [bioproject-tags.md](bioproject-tags.md)) |
 | `assay_type`, `platform`, `librarylayout`, `sample_country` | `assay_type=RNA-Seq` |
 | `release_from`, `release_to` | `release_from=2020-01-01` (the `release_date` field: first public run, else project release, else submission) |

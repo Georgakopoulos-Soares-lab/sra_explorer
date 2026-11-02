@@ -4,6 +4,11 @@
 -- object: each field (tissue, sex, cell_type, ...) holds a list of distinct values,
 -- most frequent first, plus n_runs, e.g.
 --   {"n_runs": 2, "organism": ["Mus musculus"], "tissue": ["thymus"], "sex": ["male"]}
+--
+-- The search filters read bioproject_attribute_values, a view built from this
+-- table, so it is dropped here and must be recreated after loading:
+--   backend/sql/bioproject_attribute_values.sql
+DROP MATERIALIZED VIEW IF EXISTS bioproject_attribute_values;
 DROP TABLE IF EXISTS bioproject_attributes;
 
 CREATE TABLE bioproject_attributes (

@@ -88,6 +88,22 @@ class BioprojectTags(Base):
     labels: Mapped[Optional[str]] = mapped_column(Text, deferred=True)
 
 
+class BioprojectAttributes(Base):
+    """Sample attributes per bioproject, normalised from sra_metadata's jattr.
+
+    Loaded by Automations/output/bioproject_attributes_schema.sql; built by
+    Automations/jattr_normalize.py (docs/jattr-normalization.md). attributes
+    holds n_runs and, per field (tissue, sex, cell_line, ...), a list of
+    distinct values, most frequent first. The search filters read the
+    bioproject_attribute_values view built from it.
+    """
+
+    __tablename__ = "bioproject_attributes"
+
+    bioproject: Mapped[str] = mapped_column(Text, primary_key=True)
+    attributes: Mapped[Any] = mapped_column(JSONB, nullable=False)
+
+
 class BioprojectEmbedding(Base):
     __tablename__ = "bioproject_embeddings"
     __table_args__ = (
