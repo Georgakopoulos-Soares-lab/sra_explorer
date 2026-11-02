@@ -56,6 +56,7 @@ class ValueList(BaseModel):
 class Rule(BaseModel):
     id: int
     field: str
+    action: str  # rename, capitalize
     from_value: str
     to_value: str
     rows: Optional[int] = None
@@ -126,6 +127,15 @@ def rename(body: RenameRequest):
     if to_value in from_values:
         raise HTTPException(status_code=422, detail="The new value is one of the values being changed.")
     return normalize.submit_rename(body.field, from_values, to_value).to_dict()
+
+
+class CapitalizeRequest(BaseModel):
+    field: FieldName
+
+
+@router.post("/capitalize", response_model=Job)
+def capitalize(body: CapitalizeRequest):
+    return normalize.submit_capitalize(body.field).to_dict()
 
 
 @router.post("/apply", response_model=Job)

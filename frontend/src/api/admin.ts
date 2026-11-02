@@ -25,6 +25,8 @@ export interface ValueList {
 export interface Rule {
   id: number
   field: string
+  // rename: from_value -> to_value. capitalize: every value's first letter (from/to empty).
+  action: 'rename' | 'capitalize'
   from_value: string
   to_value: string
   rows: number | null
@@ -33,7 +35,7 @@ export interface Rule {
 
 export interface Job {
   id: string
-  kind: 'rename' | 'apply'
+  kind: 'rename' | 'capitalize' | 'apply'
   field: string | null
   from_values: string[]
   to_value: string | null
@@ -56,6 +58,7 @@ export function adminApi(code: string) {
     deleteRule: (id: number) => apiRequest<{ deleted: number }>('DELETE', `/admin/rules/${id}`, { headers }),
     rename: (field: string, from_values: string[], to_value: string) =>
       apiRequest<Job>('POST', '/admin/rename', { body: { field, from_values, to_value }, headers }),
+    capitalize: (field: string) => apiRequest<Job>('POST', '/admin/capitalize', { body: { field }, headers }),
     apply: () => apiRequest<Job>('POST', '/admin/apply', { headers }),
     jobs: () => apiRequest<Job[]>('GET', '/admin/jobs', { headers }),
   }

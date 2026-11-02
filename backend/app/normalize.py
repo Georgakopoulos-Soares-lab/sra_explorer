@@ -14,6 +14,10 @@ Each field says where its values live:
   attribute  a list in bioproject_attributes.attributes (tissue, sex, ...),
              summarised in bioproject_attribute_values
 
+Besides renames, a rule can capitalise the first letter of every value of a
+field ("liver" -> "Liver", "eWAT tissue" -> "EWAT tissue"; the rest of the
+value is kept). It is recorded once and replayed in order with the renames.
+
 Renames and re-applies run as background jobs, one at a time: a run field
 rename updates sra_metadata (42 million rows), and refreshing a materialized
 view afterwards takes seconds to minutes. The admin page polls the job.
@@ -32,7 +36,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from . import search
+from . import search, statistics
 from .database import engine
 
 logger = logging.getLogger(__name__)
@@ -130,63 +134,102 @@ def list_values(name: str, q: str = "", limit: int = 100, offset: int = 0) -> di
     return {"total": rows[0].total if rows else 0, "items": [{"value": r.value, "count": r.n} for r in rows]}
 
 
-def rename_rows(conn: Connection, name: str, from_value: str, to_value: str) -> int:
-    """Changes from_value to to_value in the field's storage; returns the rows changed.
+RENAME = "rename"
+CAPITALIZE = "capitalize"
+ACTIONS = (RENAME, CAPITALIZE)
 
-    Runs in the caller's transaction. Doesn't record a rule or refresh views.
+
+def _capitalized(value_sql: str) -> str:
+    """SQL for value_sql with its first character upper-cased, the rest kept."""
+    return f"upper(left({value_sql}, 1)) || substr({value_sql}, 2)"
+
+
+def _starts_lowercase(value_sql: str) -> str:
+    """SQL: true when capitalising would change the value."""
+    return f"left({value_sql}, 1) <> upper(left({value_sql}, 1))"
+
+
+def apply_rule(conn: Connection, name: str, action: str, from_value: str = "", to_value: str = "") -> int:
+    """Applies one rule to the field's storage; returns the rows changed.
+
+    rename: from_value -> to_value. capitalize: every value's first letter
+    (from_value and to_value unused). Runs in the caller's transaction.
+    Doesn't record a rule or refresh views.
     """
     spec = FIELDS[name]
     params = {"from": from_value, "to": to_value}
-    if spec["kind"] == "column":
+    if spec["kind"] in ("column", "run"):
+        table = "bioprojects" if spec["kind"] == "column" else "sra_metadata"
         col = spec["column"]
-        result = conn.execute(text(f"UPDATE bioprojects SET {col} = :to WHERE {col} = :from"), params)
-    elif spec["kind"] == "run":
-        col = spec["column"]
-        result = conn.execute(text(f"UPDATE sra_metadata SET {col} = :to WHERE {col} = :from"), params)
+        if action == RENAME:
+            sql = f"UPDATE {table} SET {col} = :to WHERE {col} = :from"
+        else:
+            sql = f"UPDATE {table} SET {col} = {_capitalized(col)} WHERE {_starts_lowercase(col)}"
+        return conn.execute(text(sql), params).rowcount
+    # A list in bioproject_attributes; projects changed, each counted once even
+    # if several of its lists changed.
+    if action == RENAME:
+        new_value, needs_change = "CASE WHEN e = :from THEN :to ELSE e END", "jsonb_exists(a.attributes -> CAST(:field AS text), :from)"
     else:
-        # Replace the value in the field's list, keeping the list's order and
-        # dropping a duplicate if to_value was already in it.
-        # Projects changed, each counted once even if several of its lists changed.
-        changed: set[str] = set()
-        for key in [name, *spec.get("also", [])]:
-            changed |= _rename_in_list(conn, key, from_value, to_value)
-        return len(changed)
-    return result.rowcount
+        new_value = _capitalized("e")
+        needs_change = (
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text(a.attributes -> CAST(:field AS text)) AS l(e)"
+            f" WHERE {_starts_lowercase('e')})"
+        )
+    changed: set[str] = set()
+    for key in [name, *spec.get("also", [])]:
+        changed |= _rewrite_list(conn, key, new_value, needs_change, params)
+    return len(changed)
 
 
-def _rename_in_list(conn: Connection, key: str, from_value: str, to_value: str) -> set[str]:
-    """Replaces from_value in the list under key in bioproject_attributes.attributes;
-    returns the projects changed."""
-    params = {"from": from_value, "to": to_value, "field": key}
-    return set(conn.execute(text("""
+def rename_rows(conn: Connection, name: str, from_value: str, to_value: str) -> int:
+    """Changes from_value to to_value in the field's storage; returns the rows changed."""
+    return apply_rule(conn, name, RENAME, from_value, to_value)
+
+
+def _rewrite_list(conn: Connection, key: str, new_value: str, needs_change: str, params: dict) -> set[str]:
+    """Rewrites each element e of the list under key in bioproject_attributes.attributes
+    to new_value (SQL over e), in the projects where needs_change (SQL over a.attributes)
+    holds. Keeps the list's order and drops duplicates the rewrite creates.
+    Returns the projects changed."""
+    return set(conn.execute(text(f"""
             UPDATE bioproject_attributes a
             SET attributes = jsonb_set(a.attributes, ARRAY[CAST(:field AS text)], (
                 SELECT coalesce(jsonb_agg(x ORDER BY first_ord), '[]'::jsonb)
                 FROM (
                     SELECT x, min(ord) AS first_ord
                     FROM (
-                        SELECT CASE WHEN e = :from THEN :to ELSE e END AS x, ord
+                        SELECT {new_value} AS x, ord
                         FROM jsonb_array_elements_text(a.attributes -> CAST(:field AS text)) WITH ORDINALITY AS t(e, ord)
-                    ) renamed
+                    ) rewritten
                     GROUP BY x
                 ) deduped
             ))
             WHERE jsonb_typeof(a.attributes -> CAST(:field AS text)) = 'array'
-              AND jsonb_exists(a.attributes -> CAST(:field AS text), :from)
+              AND {needs_change}
             RETURNING a.bioproject
-        """), params).scalars())
+        """), {**params, "field": key}).scalars())
 
 
-def record_rule(conn: Connection, name: str, from_value: str, to_value: str, rows: int) -> int:
+def ensure_schema() -> None:
+    """Adds the action column to a value_normalizations table made before it
+    existed (create_all doesn't alter tables). Existing rules are renames."""
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE value_normalizations ADD COLUMN IF NOT EXISTS action text NOT NULL DEFAULT 'rename'"
+        ))
+
+
+def record_rule(conn: Connection, name: str, from_value: str, to_value: str, rows: int, action: str = RENAME) -> int:
     return conn.execute(text("""
-        INSERT INTO value_normalizations (field, from_value, to_value, rows)
-        VALUES (:field, :from, :to, :rows) RETURNING id
-    """), {"field": name, "from": from_value, "to": to_value, "rows": rows}).scalar_one()
+        INSERT INTO value_normalizations (field, action, from_value, to_value, rows)
+        VALUES (:field, :action, :from, :to, :rows) RETURNING id
+    """), {"field": name, "action": action, "from": from_value, "to": to_value, "rows": rows}).scalar_one()
 
 
 def list_rules(name: Optional[str] = None) -> list[dict]:
     """The recorded renames, oldest first (the order they are applied in)."""
-    sql = "SELECT id, field, from_value, to_value, rows, created_at FROM value_normalizations"
+    sql = "SELECT id, field, action, from_value, to_value, rows, created_at FROM value_normalizations"
     params = {}
     if name:
         sql += " WHERE field = :field"
@@ -238,6 +281,7 @@ def _after_change(views: list[str]) -> dict:
         refreshed, failed = refresh_views(views)
     finally:
         search.clear_value_caches()
+        statistics.mark_stale()
     return {"refreshed": refreshed, "refresh_failed": failed}
 
 
@@ -254,10 +298,19 @@ def run_rename(name: str, from_values: list[str], to_value: str) -> dict:
             # effect, so the earlier rule goes.
             conn.execute(text("""
                 DELETE FROM value_normalizations
-                WHERE field = :field AND from_value = :to AND to_value = :from
+                WHERE field = :field AND action = 'rename' AND from_value = :to AND to_value = :from
             """), {"field": name, "from": from_value, "to": to_value})
             record_rule(conn, name, from_value, to_value, changed)
             rows += changed
+    return {"rows": rows, **_after_change(FIELDS[name]["refresh"])}
+
+
+def run_capitalize(name: str) -> dict:
+    """Capitalises the first letter of every value of the field, records the
+    rule, refreshes the field's views, and forgets cached filter values."""
+    with engine.begin() as conn:
+        rows = apply_rule(conn, name, CAPITALIZE)
+        record_rule(conn, name, "", "", rows, CAPITALIZE)
     return {"rows": rows, **_after_change(FIELDS[name]["refresh"])}
 
 
@@ -273,7 +326,10 @@ def apply_all() -> dict:
             if rule["field"] not in FIELDS:
                 logger.warning("Skipping rule %s for unknown field %s", rule["id"], rule["field"])
                 continue
-            changed = rename_rows(conn, rule["field"], rule["from_value"], rule["to_value"])
+            if rule["action"] not in ACTIONS:
+                logger.warning("Skipping rule %s with unknown action %s", rule["id"], rule["action"])
+                continue
+            changed = apply_rule(conn, rule["field"], rule["action"], rule["from_value"], rule["to_value"])
             rows += changed
             if changed:
                 touched.add(rule["field"])
@@ -288,7 +344,7 @@ def apply_all() -> dict:
 @dataclass
 class Job:
     id: str
-    kind: str  # "rename" or "apply"
+    kind: str  # "rename", "capitalize" or "apply"
     field: Optional[str] = None
     from_values: list[str] = dc_field(default_factory=list)
     to_value: Optional[str] = None
@@ -358,6 +414,11 @@ def submit_rename(name: str, from_values: list[str], to_value: str) -> Job:
     return submit(job, lambda: run_rename(name, from_values, to_value))
 
 
+def submit_capitalize(name: str) -> Job:
+    job = Job(id=uuid.uuid4().hex[:12], kind="capitalize", field=name)
+    return submit(job, lambda: run_capitalize(name))
+
+
 def submit_apply() -> Job:
     return submit(Job(id=uuid.uuid4().hex[:12], kind="apply"), apply_all)
 
@@ -378,6 +439,7 @@ def main(argv: list[str]) -> int:
 
     # The rules table, if the API has never started on this database.
     Base.metadata.create_all(bind=engine, tables=[models.ValueNormalization.__table__])
+    ensure_schema()
     result = apply_all()
     print(f"applied {result['rules']} rules, changed {result['rows']:,} rows, "
           f"refreshed {', '.join(result['refreshed']) or 'no views'}")

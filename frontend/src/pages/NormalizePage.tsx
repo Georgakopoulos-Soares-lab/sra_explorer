@@ -233,6 +233,15 @@ function Normalizer({ code }: { code: string }) {
     }
   }
 
+  const startCapitalize = async () => {
+    if (!field) return
+    try {
+      setJob(await api.capitalize(field))
+    } catch (e) {
+      setError(errorMessage(e))
+    }
+  }
+
   const startApply = async () => {
     try {
       setJob(await api.apply())
@@ -263,10 +272,13 @@ function Normalizer({ code }: { code: string }) {
   ]
 
   const jobText = (j: Job) => {
+    const fieldLabel = fields.find((f) => f.name === j.field)?.label ?? j.field
     const what =
       j.kind === 'apply'
         ? 'Re-applying all rules'
-        : `Changing ${j.from_values.map((v) => `“${v}”`).join(', ')} to “${j.to_value}”`
+        : j.kind === 'capitalize'
+          ? `Capitalising the first letter of every ${fieldLabel} value`
+          : `Changing ${j.from_values.map((v) => `“${v}”`).join(', ')} to “${j.to_value}”`
     if (j.status === 'done') {
       const refreshed = j.refreshed.length ? `; refreshed ${j.refreshed.join(', ')}` : ''
       const rowName = fields.find((f) => f.name === j.field)?.rows ?? 'rows'
@@ -328,6 +340,19 @@ function Normalizer({ code }: { code: string }) {
           {values.total.toLocaleString()} distinct values
         </Text>
         <span className="flex-1" />
+        <Popconfirm
+          title={`Capitalise every ${current?.label ?? ''} value?`}
+          description={
+            <span className="block max-w-xs">
+              Makes the first letter of every value upper case (“liver” becomes “Liver”); the rest of each value is kept.
+              Kept as a rule, so values from future data loads are capitalised too.
+            </span>
+          }
+          onConfirm={startCapitalize}
+          okText="Capitalise"
+        >
+          <Button disabled={busy || !field}>Capitalise first letters</Button>
+        </Popconfirm>
         <Popconfirm
           title="Apply all rules again?"
           description="Needed after loading new data. Every recorded rename for every field is applied, then the views are refreshed."
@@ -397,8 +422,18 @@ function Normalizer({ code }: { code: string }) {
             pagination={false}
             dataSource={rules}
             columns={[
-              { title: 'From', dataIndex: 'from_value', render: (v: string) => <span className="font-mono text-sm">{v}</span> },
-              { title: 'To', dataIndex: 'to_value', render: (v: string) => <span className="font-mono text-sm">{v}</span> },
+              {
+                title: 'From',
+                dataIndex: 'from_value',
+                render: (v: string, rule) =>
+                  rule.action === 'capitalize' ? <Text type="secondary">every value</Text> : <span className="font-mono text-sm">{v}</span>,
+              },
+              {
+                title: 'To',
+                dataIndex: 'to_value',
+                render: (v: string, rule) =>
+                  rule.action === 'capitalize' ? <Text type="secondary">first letter capitalised</Text> : <span className="font-mono text-sm">{v}</span>,
+              },
               {
                 title: 'Rows changed',
                 dataIndex: 'rows',

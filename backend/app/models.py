@@ -117,6 +117,9 @@ class ValueNormalization(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     field: Mapped[str] = mapped_column(Text, nullable=False)  # a key of normalize.FIELDS
+    # "rename" (from_value -> to_value) or "capitalize" (every value's first
+    # letter; from_value and to_value are empty).
+    action: Mapped[str] = mapped_column(Text, nullable=False, server_default="rename")
     from_value: Mapped[str] = mapped_column(Text, nullable=False)
     to_value: Mapped[str] = mapped_column(Text, nullable=False)
     # Rows changed when the rule was made.

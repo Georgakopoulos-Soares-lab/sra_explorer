@@ -8,7 +8,7 @@ Values in the database come from submitters and are spelled many ways: `Liver`, 
 | Page code | `frontend/src/pages/NormalizePage.tsx`, `frontend/src/api/admin.ts` |
 | API | `backend/app/admin.py` (`/admin/...`, not in the OpenAPI docs) |
 | Renaming, rules, re-applying | `backend/app/normalize.py` |
-| Rules table | `value_normalizations` (created by the API at startup, never dropped by the data loading scripts) |
+| Rules table | `value_normalizations`: one row per rule, with `action` `rename` (from → to) or `capitalize` (every value). Created by the API at startup (which also adds `action` to an older table), never dropped by the data loading scripts |
 
 ## Access
 
@@ -43,7 +43,9 @@ To change the code, change both constants. A deployment can also override the AP
 
 4. **Rules.** Under the table, the rules recorded for the field: from, to, rows changed, when. A rule can be forgotten with its delete button, which only stops it being applied after the next data load; rows already changed stay as they are (rename them back if needed).
 
-5. **Re-apply all rules** applies every recorded rule for every field again, for use after loading new data. The same thing from the command line:
+5. **Capitalise first letters** makes the first letter of every value of the field upper case: `liver` becomes `Liver`, `epididymal white adipose tissue (eWAT)` becomes `Epididymal white adipose tissue (eWAT)`. The rest of each value is kept, and values starting with a digit or symbol don't change. If two values in one project's list become equal (`liver` and `Liver`), one is kept. It is recorded as a single rule ("every value → first letter capitalised"), not one per value, so values arriving in future data loads are capitalised too. Like a rename, it is replayed in order: a rename made after it works on the capitalised values.
+
+6. **Re-apply all rules** applies every recorded rule for every field again, for use after loading new data. The same thing from the command line:
 
    ```bash
    cd backend

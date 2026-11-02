@@ -2,6 +2,7 @@ import { apiGet } from './client'
 import type {
   Bioproject,
   BioprojectFilters,
+  DatabaseStatistics,
   FacetValue,
   HealthStatus,
   PublicApiDocs,
@@ -53,6 +54,9 @@ export const api = {
     apiGet<FacetValue[]>('/search/tag-summary', params, { signal }),
 
   stats: (signal?: AbortSignal) => apiGet<Stats>('/search/stats', undefined, { signal }),
+
+  // Everything on the statistics page; computed by the backend in the background.
+  statistics: (signal?: AbortSignal) => apiGet<DatabaseStatistics>('/statistics', undefined, { signal }),
 
   // The public API's rate limit and parameters, for the API documentation page.
   publicApiDocs: (signal?: AbortSignal) => apiGet<PublicApiDocs>('/search/public-api-docs', undefined, { signal }),

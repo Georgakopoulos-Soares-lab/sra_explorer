@@ -29,7 +29,7 @@ export const FILTER_SECTIONS: FilterSection[] = [
     // Kept as 'organism' so the panel still opens on it.
     key: 'organism',
     title: 'Organism, samples and sequencing',
-    hint: 'Run filters (assay type, instrument to sequencing center) need one run matching them all. Sample filters (cell line to ChIP target) match when the project\'s samples include each value, not necessarily in the same sample.',
+    hint: 'Sequencing filters (assay type, instrument, library, center) must all match the same run. Sample filters (cell line to ChIP target) can match different samples.',
     filters: [
       { kind: 'select', key: 'supergroup', label: 'Supergroup' },
       { kind: 'suggest', key: 'organism', label: 'Organism' },

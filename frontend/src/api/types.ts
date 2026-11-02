@@ -140,3 +140,60 @@ export interface PublicApiDocs {
   rate_limit_seconds: number
   filters: PublicApiFilter[]
 }
+
+// The statistics page (GET /statistics; backend/app/statistics.py).
+
+export interface CategoryCount {
+  value: string
+  // In the dimension's unit (projects or studies).
+  count: number
+  // Runs with this value; only for assay type, platform and library source.
+  runs?: number | null
+}
+
+export interface StatisticsDimension {
+  name: 'assay_type' | 'platform' | 'instrument' | 'library_source' | 'library_layout' | 'organism' | 'sample_country' | 'submitter_country'
+  label: string
+  unit: 'projects' | 'studies'
+  // Distinct known values, and units without a known value.
+  distinct: number
+  unknown: number
+  // The most common values (at most 40), most common first.
+  values: CategoryCount[]
+  // Counts per year of the 20 most common values.
+  by_year: { year: number; value: string; count: number }[]
+  // Units with a known value, per year: the denominator for shares.
+  known_by_year: { year: number; count: number }[]
+}
+
+export interface YearCounts {
+  year: number
+  projects: number
+  studies: number
+  runs: number
+  // Projects released that year with a linked publication / GEO series.
+  projects_published: number
+  projects_geo: number
+}
+
+export interface DatabaseStatistics {
+  generated_at: string
+  // The latest run release date in the data.
+  data_through: string | null
+  totals: {
+    projects: number
+    studies: number
+    runs: number
+    organisms: number
+    assay_types: number
+    submitter_countries: number
+    sample_countries: number
+    projects_published: number
+    projects_geo: number
+    // Median days from a project's release to its first publication.
+    publication_lag_days: number | null
+    publication_lag_projects: number
+  }
+  years: YearCounts[]
+  dimensions: StatisticsDimension[]
+}

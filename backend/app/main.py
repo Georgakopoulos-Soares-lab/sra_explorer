@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import admin, embeddings, models, public_api, schemas, search
+from . import admin, embeddings, models, normalize, public_api, schemas, search, statistics
 from .database import Base, engine, get_db
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,10 @@ def check_release_date() -> None:
 async def lifespan(app: FastAPI):
     # Only creates tables that don't exist yet; never alters loaded data.
     Base.metadata.create_all(bind=engine)
+    normalize.ensure_schema()
     check_release_date()
     threading.Thread(target=search.warm_cache, daemon=True).start()
+    threading.Thread(target=statistics.refresh, daemon=True).start()
     threading.Thread(target=embeddings.warm_model, daemon=True).start()
     yield
 
@@ -52,6 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(search.router)
+app.include_router(statistics.router)
 app.include_router(public_api.router)
 app.include_router(public_api.docs_router)
 app.include_router(admin.router)

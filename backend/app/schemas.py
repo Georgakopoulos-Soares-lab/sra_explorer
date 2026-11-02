@@ -139,3 +139,74 @@ class ApiInfo(BaseModel):
 class PublicApiDocs(BaseModel):
     rate_limit_seconds: float
     filters: list[FilterInfo]
+
+
+# Statistics page (statistics.py)
+
+
+class CategoryCount(BaseModel):
+    value: str
+    # In the dimension's unit (projects or studies).
+    count: int
+    # Runs with this value; only for assay type, platform and library source.
+    runs: Optional[int] = None
+
+
+class YearCount(BaseModel):
+    year: int
+    count: int
+
+
+class YearValueCount(BaseModel):
+    year: int
+    value: str
+    count: int
+
+
+class Dimension(BaseModel):
+    name: str
+    label: str
+    unit: str  # projects, studies
+    # Distinct known values, and units without a known value.
+    distinct: int
+    unknown: int
+    # The most common values (at most 40), most common first.
+    values: list[CategoryCount]
+    # Counts per year of the 20 most common values.
+    by_year: list[YearValueCount]
+    # Units with a known value, per year: the denominator for shares.
+    known_by_year: list[YearCount]
+
+
+class YearCounts(BaseModel):
+    year: int
+    projects: int
+    studies: int
+    runs: int
+    # Projects released that year with a linked publication / GEO series.
+    projects_published: int
+    projects_geo: int
+
+
+class StatisticsTotals(BaseModel):
+    projects: int
+    studies: int
+    runs: int
+    organisms: int
+    assay_types: int
+    submitter_countries: int
+    sample_countries: int
+    projects_published: int
+    projects_geo: int
+    # Median days from a project's release to its first publication.
+    publication_lag_days: Optional[float] = None
+    publication_lag_projects: int
+
+
+class DatabaseStatistics(BaseModel):
+    generated_at: str
+    # The latest run release date in the data.
+    data_through: Optional[date] = None
+    totals: StatisticsTotals
+    years: list[YearCounts]
+    dimensions: list[Dimension]

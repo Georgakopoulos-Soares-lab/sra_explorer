@@ -5,6 +5,7 @@ import BrandName from './BrandName'
 const NAV = [
   { key: '/', label: <Link to="/">Home</Link> },
   { key: '/search', label: <Link to="/search">Search</Link> },
+  { key: '/statistics', label: <Link to="/statistics">Statistics</Link> },
   { key: '/docs/api', label: <Link to="/docs/api">API</Link> },
 ]
 
