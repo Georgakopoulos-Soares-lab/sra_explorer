@@ -87,7 +87,7 @@ So any project ranked reasonably in both lists outranks the first place of eithe
 
 ### 4. Filters, sorting and paging
 
-The sidebar filters, including the **Tags** filter, are applied to the fused list, then results are sorted by score (`sort=relevance`, the default for text searches) or by a column the user clicks. The total count is the number of fused projects that pass the filters.
+The sidebar filters, including the **Tags** filter, are applied to the fused list ([filters.md](filters.md) describes them), then results are sorted by score (`sort=relevance`, the default for text searches) or by a column the user clicks. The total count is the number of fused projects that pass the filters.
 
 Each result carries:
 

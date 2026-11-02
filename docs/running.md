@@ -114,7 +114,7 @@ Backend environment variables:
 | Files  | `/files/<SRA study>` | A study's runs and their FASTQ download links, from ENA     |
 | API    | `/docs/api` | How to use the public API, with Python examples                  |
 
-The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results.
+The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results. [filters.md](filters.md) describes every filter, how they combine and narrow each other, and the rows above the results.
 
 The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_publications=true`), so it can be bookmarked or shared, and the back button returns to the previous search.
 
@@ -148,14 +148,16 @@ The website's search page uses these endpoints, defined in `backend/app/search.p
 | ------------------------------ | -------------------------------------------------------------------- |
 | `GET /search/latest`           | The 100 most recently released projects, shown before any search    |
 | `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count. With `q`, a hybrid semantic and full-text search: results carry `similarity` and `text_match`, and sort best match first (`sort=relevance`) unless another sort is given |
-| `GET /search/facets/{field}`   | Dropdown options with counts for one filter                          |
-| `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism, sequencing center and tag. Tag matches carry their type in `group`; organism matches can be narrowed with `supergroup` |
+| `GET /search/facets/{field}`   | Dropdown options with counts for one filter, narrowed by the other filters passed with it |
+| `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism, sequencing center, tag and the sample attributes except sex. Tag matches carry their type in `group`. Narrowed by the other filters passed with it, like `/search/facets` |
 | `GET /search/tag-summary`      | The most common tags among a search's top results, for the Suggested tags in the Tags row above the results; same parameters as `/search/bioprojects` |
 | `GET /search/stats`            | Counts shown on the home page                                         |
 
 All filter parameters are listed at <http://localhost:8000/docs>. Within one filter, several values match any of them, except `tag`, where a project must have all of them. Different filters must all match.
 
-Dropdown and type-ahead values are cached in the API process for an hour. Empty results aren't cached, so values appear as soon as data is loaded.
+Each filter's options are narrowed by the other filters passed with the request. See [filters.md](filters.md#filters-narrow-each-other).
+
+Unnarrowed dropdown and type-ahead values (no other filters chosen) are cached in the API process for an hour. Empty results aren't cached, so values appear as soon as data is loaded.
 
 ### Database setup for search
 
@@ -201,7 +203,7 @@ For production, see [production.md](production.md): it lists every index and vie
 
 ### Run filters need the `study_facets` view
 
-Run filters (assay type, platform, sample country, and so on) read from `study_facets`, a materialized view with one row per SRA study that summarises its runs. Without it, every run filter scans the whole `sra_metadata` table, which takes one to two minutes per search on the full data.
+Run filters (assay type, platform, instrument, and so on) read from `study_facets`, a materialized view with one row per SRA study that summarises its runs. Without it, every run filter scans the whole `sra_metadata` table, which takes one to two minutes per search on the full data.
 
 Create it once after loading `sra_metadata` (takes a few minutes):
 
