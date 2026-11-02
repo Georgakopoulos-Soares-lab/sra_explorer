@@ -3,8 +3,8 @@
 export default function BrandName({ onDark = false }: { onDark?: boolean }) {
   return (
     <span className="tracking-tight">
-      <span className={`font-extrabold ${onDark ? 'text-[#69b1ff]' : 'text-[#1677ff]'}`}>SRA</span>
-      <span className={`font-semibold ${onDark ? 'text-[#95de64]' : 'text-[#389e0d]'}`}>scout</span>
+      <span className={`font-extrabold ${onDark ? 'text-brand-sra-light' : 'text-brand-sra'}`}>SRA</span>
+      <span className={`font-semibold ${onDark ? 'text-brand-scout-light' : 'text-brand-scout'}`}>scout</span>
     </span>
   )
 }

@@ -78,7 +78,7 @@ function StatsRow() {
   const items: [string, keyof Stats][] = [
     ['BioProjects', 'bioprojects'],
     ['SRA studies', 'studies'],
-    ['Sequencing runs', 'runs'],
+    ['Samples', 'runs'],
     ['Organisms', 'organisms'],
   ]
   return (
@@ -134,7 +134,6 @@ export default function HomePage() {
                 <div>
                   <div className="mb-1 flex items-center gap-2 font-semibold">
                     {f.title}
-                    {f.soon && <Tag color="gold">Coming soon</Tag>}
                   </div>
                   <Text type="secondary">{f.text}</Text>
                 </div>

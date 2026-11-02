@@ -3,3 +3,11 @@
 @layer theme, base, antd, components, utilities;
 
 @import "tailwindcss";
+
+/* Brand colours (antd blue-6/4 and green-7/4) for the "SRA" / "scout" wordmark. */
+@theme {
+  --color-brand-sra: #1677ff;
+  --color-brand-sra-light: #69b1ff;
+  --color-brand-scout: #389e0d;
+  --color-brand-scout-light: #95de64;
+}
