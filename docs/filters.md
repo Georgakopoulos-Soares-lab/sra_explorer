@@ -83,6 +83,8 @@ Filter changes are drafts until **Search** is clicked; unapplied changes are fla
 
 Dropdowns load their options when opened; type-ahead boxes search as you type. Both show the number of projects for each value.
 
+Scrolling stays where the pointer is: a dropdown list that reaches its end, or one too short to scroll, never scrolls the panel or the page behind it, and the panel never scrolls the page (`overscroll-behavior` in `frontend/src/index.css`, with a wheel fallback in `FilterPanel.tsx`; the dropdown lists are non-virtual so they scroll natively).
+
 ### Filters only in the API
 
 The backend still accepts filters that were taken out of the panel, so links and scripts using them keep working: `data_types`, `objectives`, `relevance`, `target_material`, `target_capture`, `sample_scope`, `method_type`, `access`, `platform`, `librarysource`, `run_organism`, `sample_country`, `run_release_from` / `run_release_to`, `submitted_from` / `submitted_to`, `updated_from` / `updated_to`, `first_publication_from` / `first_publication_to`, `min_publications`, `has_geo` and `has_grants`. `GET /v1/filters` lists them all. The sample attributes `age`, `developmental_stage`, `host` and `source_name` have no filter at all (see [jattr-normalization.md](jattr-normalization.md#searching-by-sample-attributes)).

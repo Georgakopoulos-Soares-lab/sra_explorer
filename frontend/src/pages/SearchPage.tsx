@@ -360,7 +360,7 @@ export default function SearchPage() {
         <aside className="w-72 shrink-0">
           <div className="sticky top-4 flex max-h-[calc(100vh-2rem)] flex-col rounded-lg bg-white">
             <div className="px-4 pb-1 pt-3 font-semibold">Filters</div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2">{panel}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">{panel}</div>
             <div className="border-t border-gray-100 p-3">{panelFooter}</div>
           </div>
         </aside>

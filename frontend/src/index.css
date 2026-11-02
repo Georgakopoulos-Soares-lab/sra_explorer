@@ -11,3 +11,12 @@
   --color-brand-scout: #389e0d;
   --color-brand-scout-light: #95de64;
 }
+
+/* Scroll only what the pointer is over: a dropdown list that reaches its top
+   or bottom doesn't pass the scroll on to the filter panel or the page. Needs
+   the list to scroll natively (virtual={false} on the filter selects). The
+   filter panel does the same with Tailwind's overscroll-contain. */
+.ant-select-dropdown .ant-select-dropdown-list-holder,
+.ant-drawer-body {
+  overscroll-behavior: contain;
+}

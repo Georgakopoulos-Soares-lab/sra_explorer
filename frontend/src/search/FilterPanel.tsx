@@ -7,6 +7,34 @@ import type { FilterValues, ParamUpdate } from './useSearchState'
 
 const DATE_FORMAT = 'YYYY-MM-DD'
 
+// With the pointer over an open dropdown, the wheel scrolls only its list,
+// never the panel or page behind it. The overscroll-behavior rule in index.css
+// does this in Chrome, even for a list too short to scroll; this is a fallback
+// for browsers that pass the wheel through such a list, and for the dropdown's
+// edges outside the list. It only ever blocks a wheel over a dropdown whose
+// list can't scroll that way; if the list isn't found (antd changed its
+// markup) it does nothing. Needs a non-passive listener, which React's
+// onWheel isn't, so it's added once here.
+let wheelLocked = false
+function lockDropdownWheel() {
+  if (wheelLocked) return
+  wheelLocked = true
+  document.addEventListener(
+    'wheel',
+    (e) => {
+      const dropdown = (e.target as Element | null)?.closest?.('.ant-select-dropdown')
+      if (!dropdown) return
+      const list = dropdown.querySelector('.ant-select-dropdown-list-holder')
+      if (!list) return
+      const canScroll =
+        list.contains(e.target as Node) &&
+        (e.deltaY < 0 ? list.scrollTop > 0 : list.scrollTop + list.clientHeight < list.scrollHeight - 1)
+      if (!canScroll) e.preventDefault()
+    },
+    { passive: false },
+  )
+}
+
 interface Props {
   values: FilterValues
   onChange: (update: ParamUpdate) => void
@@ -102,6 +130,9 @@ function SelectFilter({ def, values, onChange }: Props & { def: FilterDef }) {
   return (
     <Select
       mode="multiple"
+      // A plain list (not virtual) scrolls natively, so it can stop scrolling
+      // from reaching the panel and page (see index.css).
+      virtual={false}
       allowClear
       className="w-full"
       placeholder="Any"
@@ -163,6 +194,9 @@ function SuggestFilter({ def, values, onChange }: Props & { def: FilterDef }) {
   return (
     <Select
       mode="multiple"
+      // A plain list (not virtual) scrolls natively, so it can stop scrolling
+      // from reaching the panel and page (see index.css).
+      virtual={false}
       allowClear
       className="w-full"
       placeholder="Type to search"
@@ -308,6 +342,7 @@ const isActive = (values: FilterValues, def: FilterDef) =>
   })
 
 export default function FilterPanel(props: Props) {
+  useEffect(lockDropdownWheel, [])
   return (
     <Collapse
       ghost
