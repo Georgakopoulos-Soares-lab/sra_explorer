@@ -8,6 +8,7 @@ import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
 import FilterPanel from '../search/FilterPanel'
 import Publications from '../search/Publications'
+import TagList from '../search/TagList'
 import { projectPublications } from '../search/parsePublications'
 import { RELEVANCE_SORT, type SortKey } from '../search/filters'
 import {
@@ -25,8 +26,6 @@ const LATEST_COUNT = 100
 // Shown under the search box; clicking it runs this search.
 const EXAMPLE_QUERY = 'RNA-seq of breast cancer tumors treated with tamoxifen'
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
-// Tags shown under a title; the rest are counted in a "+N" tag (hover lists them).
-const MAX_TAGS = 6
 const rowKey = (p: SearchHit) => `${p.bioproject}:${p.sra_study}`
 // An expanded project and its details share a tint and a blue bar on the left,
 // and a border under the details marks where the next project starts.
@@ -247,18 +246,7 @@ export default function SearchPage() {
           <Typography.Paragraph ellipsis={{ rows: 2, tooltip: v || p.name }} className="!mb-0">
             {v || p.name || <Typography.Text type="secondary">Untitled</Typography.Text>}
           </Typography.Paragraph>
-          {p.tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-y-1">
-              {p.tags.slice(0, MAX_TAGS).map((t) => (
-                <Tag key={t} color="blue" className="!text-xs">{t}</Tag>
-              ))}
-              {p.tags.length > MAX_TAGS && (
-                <Tag className="!text-xs" title={p.tags.slice(MAX_TAGS).join(', ')}>
-                  +{p.tags.length - MAX_TAGS}
-                </Tag>
-              )}
-            </div>
-          )}
+          <TagList tags={p.tags} organism={p.organism_name} />
         </div>
       ),
     },
