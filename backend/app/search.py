@@ -16,6 +16,7 @@ first.
 import logging
 import os
 import time
+from collections import Counter
 from datetime import date
 from typing import Annotated, Literal, Optional
 
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 B = models.Bioproject
 R = models.SraMetadata
 E = models.BioprojectEmbedding
+G = models.BioprojectTags
 
 # Projects less similar than this to the search text are left out. On the
 # real data, relevant projects score about 0.55-0.85 and nonsense queries at
@@ -161,6 +163,9 @@ class SearchFilters(BaseModel):
     organization_country: list[str] = Field(default_factory=list)
     organization: list[str] = Field(default_factory=list)
     journals: list[str] = Field(default_factory=list)
+    # Tag words (bioproject_tags). Unlike the other lists, a project must have
+    # every selected tag; projects without tags never match.
+    tag: list[str] = Field(default_factory=list)
 
     release_from: Optional[date] = None
     release_to: Optional[date] = None
@@ -208,6 +213,12 @@ def split_values(column):
     return func.string_to_array(column, "; ", type_=ARRAY(Text))
 
 
+def tag_array(column):
+    """string_to_array(tags, '; ') with the separator inlined, so Postgres can
+    use the GIN index on that exact expression (a bound parameter can't)."""
+    return func.string_to_array(column, literal_column("'; '"), type_=ARRAY(Text))
+
+
 def build_conditions(f: SearchFilters) -> list:
     conditions = []
 
@@ -223,6 +234,9 @@ def build_conditions(f: SearchFilters) -> list:
             conditions.append(split_values(column).overlap(values))
         else:
             conditions.append(column.in_(values))
+
+    if f.tag:
+        conditions.append(exists().where(G.bioproject == B.bioproject, tag_array(G.tags).contains(f.tag)))
 
     for prefix, column in DATE_FIELDS.items():
         start, end = getattr(f, f"{prefix}_from"), getattr(f, f"{prefix}_to")
@@ -302,11 +316,12 @@ def search_bioprojects(
     return {"total": total, "items": db.scalars(stmt).all()}
 
 
-def hybrid_search(db: Session, q: str, where, filters: SiteSearchFilters) -> dict:
-    """Projects similar to q or containing its words, that also match the filters.
+def fused_matches(db: Session, q: str):
+    """The text search's candidates, before filters: (query vector, subquery
+    with bioproject, score and text_match per project).
 
     Only the SEMANTIC_CANDIDATES nearest and TEXT_CANDIDATES best text
-    matches are considered, so a broad query reports at most their sum.
+    matches are considered, so a broad query yields at most their sum.
     """
     try:
         query_vec = embeddings.embed(q)
@@ -373,6 +388,12 @@ def hybrid_search(db: Session, q: str, where, filters: SiteSearchFilters) -> dic
         )
         .subquery()
     )
+    return query_vec, fused
+
+
+def hybrid_search(db: Session, q: str, where, filters: SiteSearchFilters) -> dict:
+    """Projects similar to q or containing its words, that also match the filters."""
+    query_vec, fused = fused_matches(db, q)
     joined = B.__table__.join(fused, fused.c.bioproject == B.bioproject)
 
     total = db.scalar(select(func.count()).select_from(joined).where(where))
@@ -424,7 +445,7 @@ FACET_FIELDS = [
     "assay_type", "platform", "instrument", "librarylayout", "librarysource",
     "libraryselection", "sample_country",
 ]
-SUGGEST_FIELDS = ["organism", "organization", "journals", "run_organism", "center_name"]
+SUGGEST_FIELDS = ["organism", "organization", "journals", "run_organism", "center_name", "tag"]
 
 CACHE_SECONDS = 3600
 _cache: dict[str, tuple[float, tuple[tuple[str, int], ...]]] = {}
@@ -440,6 +461,8 @@ def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[
     loaded.
     """
     key = name if supergroup is None else f"{name}|{supergroup}"
+    if name == "tag":
+        return tuple((t, n) for t, n, _ in tag_values())
     cached = _cache.get(key)
     if cached and cached[0] > time.monotonic():
         return cached[1]
@@ -470,6 +493,47 @@ def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[
     if values:
         _cache[key] = (time.monotonic() + CACHE_SECONDS, values)
     return values
+
+
+_tag_cache: tuple[float, tuple[tuple[str, int, Optional[str]], ...], dict[str, Optional[str]]] = (0, (), {})
+
+
+def tag_values() -> tuple[tuple[str, int, Optional[str]], ...]:
+    """Every tag with its number of projects and its type, most common first.
+
+    The type is the tag's most common label; None when bioproject_tags has no
+    labels (column missing, or rows tagged before labels were kept). Cached
+    like distinct_values.
+    """
+    global _tag_cache
+    if _tag_cache[0] > time.monotonic():
+        return _tag_cache[1]
+    with engine.connect() as conn:
+        has_labels = conn.scalar(text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns"
+            " WHERE table_name = 'bioproject_tags' AND column_name = 'labels')"
+        ))
+        labels = "string_to_array(g.labels, '; ')" if has_labels else "NULL::text[]"
+        # unnest with two arrays pairs them up, padding the shorter with NULLs.
+        rows = conn.execute(text(f"""
+            SELECT u.tag, count(DISTINCT g.bioproject) AS n,
+                   mode() WITHIN GROUP (ORDER BY nullif(u.label, '')) AS label
+            FROM bioproject_tags g,
+                 unnest(string_to_array(g.tags, '; '), {labels}) AS u(tag, label)
+            WHERE u.tag <> ''
+            GROUP BY u.tag
+            ORDER BY n DESC, u.tag
+        """))
+        values = tuple((row.tag, row.n, row.label) for row in rows)
+    if values:
+        _tag_cache = (time.monotonic() + CACHE_SECONDS, values, {t: label for t, _, label in values})
+    return values
+
+
+def tag_labels() -> dict[str, Optional[str]]:
+    """Tag -> its type, from tag_values."""
+    tag_values()
+    return _tag_cache[2]
 
 
 def organisms_in(supergroups: list[str]) -> list[tuple[str, int]]:
@@ -521,6 +585,13 @@ def suggest(
     supergroup: Annotated[list[str], Query()] = [],
 ):
     needle = q.strip().lower()
+    if field == "tag":
+        matches = (
+            {"value": v, "count": n, "group": label}
+            for v, n, label in tag_values()
+            if needle in v.lower()
+        )
+        return [m for _, m in zip(range(limit), matches)]
     values = organisms_in(supergroup) if field == "organism" and supergroup else distinct_values(field)
     matches = (
         {"value": v, "count": n}
@@ -548,3 +619,52 @@ def stats(db: Session = Depends(get_db)):
     if runs is None or runs <= 0:
         runs = db.scalar(select(func.count()).select_from(R))
     return {"bioprojects": projects, "studies": studies, "organisms": organisms, "runs": runs}
+
+
+# Suggested tags are counted over this many of a search's top results, which
+# keeps the count fast for broad searches; a few are returned.
+TAG_SUMMARY_PROJECTS = 2000
+TAG_SUMMARY_SIZE = 12
+
+
+@router.get("/tag-summary", response_model=list[schemas.FacetValue])
+def tag_summary(
+    filters: Annotated[SiteSearchFilters, Query()],
+    db: Session = Depends(get_db),
+):
+    """The most common tags among a search's top results, to narrow it further.
+
+    Takes the same parameters as /search/bioprojects. The top results are the
+    most relevant for a text search, otherwise the first in the chosen sort.
+    Leaves out the project's own organism (it has its own filter), tags
+    already selected, and tags found on only one project. Only tagged projects
+    count, so the counts are out of the tagged share of the results.
+    """
+    where = and_(true(), *build_conditions(filters))
+    q = (filters.q or "").strip()
+    top = select(B.bioproject, B.organism_name).where(where)
+    if q:
+        _, fused = fused_matches(db, q)
+        top = top.join(fused, fused.c.bioproject == B.bioproject).order_by(fused.c.score.desc(), B.bioproject)
+    else:
+        sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
+        top = top.order_by(sort, B.bioproject, B.sra_study)
+    top = top.limit(TAG_SUMMARY_PROJECTS).subquery()
+
+    counts: Counter[str] = Counter()
+    skip = set(filters.tag)
+    seen = set()  # a bioproject can appear once per SRA study
+    for bioproject, organism, tags in db.execute(
+        select(top.c.bioproject, top.c.organism_name, G.tags).join(G, G.bioproject == top.c.bioproject)
+    ):
+        if bioproject in seen:
+            continue
+        seen.add(bioproject)
+        counts.update(t for t in set(tags.split("; ")) if t and t != organism and t not in skip)
+
+    labels = tag_labels()
+    return [
+        {"value": t, "count": n, "group": labels.get(t)}
+        for t, n in counts.most_common(TAG_SUMMARY_SIZE)
+        if n > 1
+    ]

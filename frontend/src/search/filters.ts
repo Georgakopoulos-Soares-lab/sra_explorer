@@ -33,6 +33,12 @@ export const FILTER_SECTIONS: FilterSection[] = [
     ],
   },
   {
+    key: 'tags',
+    title: 'Tags',
+    hint: 'Projects with all the chosen tags. Only some projects have tags so far, so this leaves out projects without them.',
+    filters: [{ kind: 'suggest', key: 'tag', label: 'Tag' }],
+  },
+  {
     key: 'sequencing',
     title: 'Sequencing runs',
     hint: 'Shows projects that have a run matching all of these.',

@@ -82,6 +82,10 @@ class BioprojectTags(Base):
 
     bioproject: Mapped[str] = mapped_column(Text, primary_key=True)
     tags: Mapped[str] = mapped_column(Text, nullable=False)
+    # Each tag's type (organism, disease, tissue, ...), "; "-separated in the
+    # same order; NULL for rows tagged before types were kept. Deferred, so
+    # loading a project's tags never reads it.
+    labels: Mapped[Optional[str]] = mapped_column(Text, deferred=True)
 
 
 class BioprojectEmbedding(Base):

@@ -106,6 +106,8 @@ export interface SearchResults {
 export interface FacetValue {
   value: string
   count: number
+  // Tags only: the tag's type (organism, disease, tissue, ...), when known.
+  group?: string | null
 }
 
 export interface Stats {

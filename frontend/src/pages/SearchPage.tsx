@@ -8,6 +8,7 @@ import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
 import FilterPanel from '../search/FilterPanel'
 import Publications from '../search/Publications'
+import TagBar from '../search/TagBar'
 import TagList from '../search/TagList'
 import { projectPublications } from '../search/parsePublications'
 import { RELEVANCE_SORT, type SortKey } from '../search/filters'
@@ -199,13 +200,27 @@ export default function SearchPage() {
     state.clearFilters()
   }
 
-  // Removing a chip applies at once, and keeps any other unapplied edits.
-  const removeApplied = (update: ParamUpdate) => {
+  // Removing a chip or clicking a tag applies at once, and keeps any other
+  // unapplied edits.
+  const applyNow = (update: ParamUpdate, query = appliedQuery) => {
     const next = applyUpdate(applied, update)
     setDraft((d) => applyUpdate(d, update))
-    setDraftFor(filtersKey(next) + appliedQuery)
-    state.apply(next, appliedQuery)
+    if (query !== appliedQuery) setQueryDraft(query)
+    setDraftFor(filtersKey(next) + query)
+    state.apply(next, query)
   }
+
+  const appliedTags = (applied.tag as string[] | undefined) ?? []
+  const selectTag = (tag: string) => {
+    if (!appliedTags.includes(tag)) applyNow({ tag: [...appliedTags, tag] })
+  }
+  // The Filters row's Clear all: every filter except tags, and accessions typed
+  // in the search box (shown in that row); a text search stays.
+  const clearFilters = () =>
+    applyNow(
+      Object.fromEntries(Object.keys(applied).filter((k) => k !== 'tag').map((k) => [k, null])),
+      state.accessions ? '' : appliedQuery,
+    )
 
   // The latest list has no server-side sorting, so its columns aren't sortable.
   const sortable = (key: SortKey) =>
@@ -246,7 +261,7 @@ export default function SearchPage() {
           <Typography.Paragraph ellipsis={{ rows: 2, tooltip: v || p.name }} className="!mb-0">
             {v || p.name || <Typography.Text type="secondary">Untitled</Typography.Text>}
           </Typography.Paragraph>
-          <TagList tags={p.tags} organism={p.organism_name} />
+          <TagList tags={p.tags} organism={p.organism_name} selected={appliedTags} onSelect={selectTag} />
         </div>
       ),
     },
@@ -406,13 +421,22 @@ export default function SearchPage() {
         <ActiveFilters
           values={applied}
           accessions={state.accessions ?? []}
-          onChange={removeApplied}
+          onChange={applyNow}
           onRemoveAccession={(acc) => {
             const rest = state.accessions!.filter((a) => a !== acc).join(' ')
             setQueryDraft(rest)
             state.update({ q: rest || null })
           }}
-          onClear={reset}
+          onClear={clearFilters}
+        />
+
+        <TagBar
+          selected={appliedTags}
+          params={apiParams}
+          suggest={!showLatest && !error && (results?.total ?? 0) > 0}
+          onAdd={selectTag}
+          onRemove={(tag) => applyNow({ tag: appliedTags.filter((t) => t !== tag) })}
+          onClear={() => applyNow({ tag: null })}
         />
 
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}

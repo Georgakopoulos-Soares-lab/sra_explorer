@@ -50,6 +50,7 @@ LIST_FILTER_HELP = {
     "organization_country": "Country of the submitting organisation",
     "organization": "Submitting organisation",
     "journals": "Journal of a linked publication",
+    "tag": "Tag word (organism, disease, tissue, cell type, ...); a project must have all given tags",
     "assay_type": "Run assay type, e.g. RNA-Seq, WGS",
     "platform": "Run platform, e.g. ILLUMINA, OXFORD_NANOPORE",
     "instrument": "Run instrument model",

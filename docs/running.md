@@ -149,10 +149,11 @@ The website's search page uses these endpoints, defined in `backend/app/search.p
 | `GET /search/latest`           | The 100 most recently released projects, shown before any search    |
 | `GET /search/bioprojects`      | Filtered, sorted, paged projects with a total count. With `q`, a hybrid semantic and full-text search: results carry `similarity` and `text_match`, and sort best match first (`sort=relevance`) unless another sort is given |
 | `GET /search/facets/{field}`   | Dropdown options with counts for one filter                          |
-| `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism and sequencing center |
+| `GET /search/suggest`          | Type-ahead matches for organism, organization, journal, run organism, sequencing center and tag. Tag matches carry their type in `group`; organism matches can be narrowed with `supergroup` |
+| `GET /search/tag-summary`      | The most common tags among a search's top results, for the Suggested tags in the Tags row above the results; same parameters as `/search/bioprojects` |
 | `GET /search/stats`            | Counts shown on the home page                                         |
 
-All filter parameters are listed at <http://localhost:8000/docs>. Within one filter, several values match any of them. Different filters must all match.
+All filter parameters are listed at <http://localhost:8000/docs>. Within one filter, several values match any of them, except `tag`, where a project must have all of them. Different filters must all match.
 
 Dropdown and type-ahead values are cached in the API process for an hour. Empty results aren't cached, so values appear as soon as data is loaded.
 
@@ -164,17 +165,21 @@ After creating `study_facets` (below), fill `bioprojects.release_date` and its i
 docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/release_date.sql
 ```
 
+### Tags need the `bioproject_tags` table
+
+Tag words under each result, the Tags filter and the Tags row above the results come from `bioproject_tags`, loaded with `Automations/TagWords/bioproject_tags_schema.sql`. That file drops `bioproject_fulltext`, so run `bioproject_fulltext.sql` (below) after it. Without the table the API creates it empty at startup, and the site works without tags. See [bioproject-tags.md](bioproject-tags.md).
+
 ### Text search needs the `bioproject_fulltext` view
 
 The full-text half of the search box's text search reads from `bioproject_fulltext`, a materialized view with one row per BioProject holding its searchable text and a full-text index. Without it, text searches are semantic only.
 
-Create it once after loading `bioprojects` (takes about a minute):
+It also holds each project's tag words, so create it after loading `bioprojects` and `bioproject_tags` (takes about a minute):
 
 ```bash
 docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/bioproject_fulltext.sql
 ```
 
-After loading new data into `bioprojects`, refresh it:
+After loading new data into `bioprojects`, or new tags into an existing `bioproject_tags` without recreating it, refresh it:
 
 ```bash
 docker exec sra_explorer_dev psql -U postgres -d postgres -c "REFRESH MATERIALIZED VIEW CONCURRENTLY bioproject_fulltext"

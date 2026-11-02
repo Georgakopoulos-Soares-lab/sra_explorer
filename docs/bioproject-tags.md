@@ -2,7 +2,7 @@
 
 Each BioProject gets a short list of tag words: the organisms, diseases, tissues, organs, cell types, cell lines, chemicals or drugs, and environments mentioned in its title and description. The tags make projects easier to filter and search, for example finding every project about `osteoarthritis` or `macrophage`, whatever words the submitter used.
 
-The tags are built by `Automations/TagWords/extract_tags.py` and loaded into the `bioproject_tags` table.
+The tags are built by `Automations/TagWords/extract_tags.py` and loaded into the `bioproject_tags` table. [How search uses the tags](#how-search-uses-the-tags) describes what the website and API do with them.
 
 | File | Purpose |
 | --- | --- |
@@ -14,21 +14,22 @@ The tags are built by `Automations/TagWords/extract_tags.py` and loaded into the
 
 ## Output
 
-A tab-separated file with a header row and two columns:
+A tab-separated file with a header row and three columns:
 
 | Column | Example |
 | --- | --- |
 | `bioproject` | `PRJNA1100990` |
 | `tags` | `Mus musculus; osteoarthritis; synovial fibroblast; keratinocyte; skin; mouse` |
+| `labels` | `organism; disease; cell type; cell type; tissue; organism` |
 
-Tags are separated by `"; "`. Each BioProject appears once. A project where nothing was found has an empty `tags` field (about 3% of projects). Projects average about 5 tags, with a maximum of 20.
+Tags are separated by `"; "`. `labels` gives each tag's type, in the same order as `tags`: one of the kept types in the table under [step 1](#1-entity-recognition). The first tag, copied from `organism_name`, is always `organism`. Each BioProject appears once. A project where nothing was found has an empty `tags` field (about 3% of projects). Projects average about 5 tags, with a maximum of 20.
 
 ### Tag order
 
 - **First tag:** the project's `organism_name` from the `bioprojects` table, when the project has one (about 65% of projects). It is copied as is, so it can include a strain, for example `Staphylococcus aureus F46798`.
 - **Remaining tags:** ordered by relevance to the project, most relevant first. Relevance is the similarity between the tag and the project's embedding (see step 3 below).
 
-The order does **not** follow the tag type. The second tag is not always a disease, and the third is not always a tissue. The type of each tag is not stored.
+The order does **not** follow the tag type. The second tag is not always a disease, and the third is not always a tissue. Use `labels` for the type.
 
 ## How the tags are made
 
@@ -141,6 +142,10 @@ The same mechanism resumes a run that was stopped or killed: rerun the command a
 
 Projects whose text has changed are **not** re-tagged. To rebuild everything, for example after changing the tag types or thresholds, add `--restart`.
 
+### Output files from before the `labels` column
+
+Older versions of the script wrote only `bioproject` and `tags`. When the script finds such a file, it upgrades it in place before continuing: every existing row gets an empty `labels` field, and new rows are written with labels. No tagging work is lost, and the file stays loadable. The old rows have no type until you rebuild them with `--restart` (a full run, about 10 hours on 16 cores). The website works either way: tags without a type are still shown, filtered and counted, just without their type next to them.
+
 ### Options
 
 | Option | Default | Meaning |
@@ -169,9 +174,12 @@ The number of workers is limited by memory. If a worker runs out of memory the r
 ```sql
 CREATE TABLE bioproject_tags (
     bioproject  TEXT NOT NULL,   -- PRIMARY KEY, join to bioprojects ON bioproject
-    tags        TEXT NOT NULL
+    tags        TEXT NOT NULL,
+    labels      TEXT             -- NULL for rows tagged before labels were kept
 );
 ```
+
+The full-text search view `bioproject_fulltext` reads this table, so the schema file drops that view first. **Run `backend/sql/bioproject_fulltext.sql` after loading the tags**, or text searches fall back to semantic only. The backend model is `BioprojectTags` in `backend/app/models.py`; `Bioproject.tags` gives a project's tags as a list.
 
 It also creates an index for exact tag lookups:
 
@@ -187,9 +195,48 @@ WHERE string_to_array(tags, '; ') @> ARRAY['mouse', 'macrophage'];
 
 Tags are matched exactly and are case sensitive, so use the forms described in step 2 above: lowercase common words (`mouse`, `liver`) and capitalised species names (`Mus musculus`).
 
+## How search uses the tags
+
+Only part of the projects have tags (171,671 of 670,720 on the development data, about 26%, from a partial run). Everything below is built so that **projects without tags are searched exactly as before**: tags can add matches and narrow a search when the user asks for it, but never hide an untagged project from a search that doesn't use them.
+
+| Feature | Where | What it does |
+| --- | --- | --- |
+| Tags under each title | Results table (`frontend/src/search/TagList.tsx`) | Grey chips, without the tag that repeats the organism. The first 5 show; `+N more` shows the rest. |
+| Clickable tags | Results table | Clicking a chip adds it to the **Tags** filter and searches at once. Tags already in the filter are blue. |
+| **Tags** filter | Filter panel; `tag` parameter of `/search/bioprojects` and `/v1/projects` | Type-ahead over all tags, with project counts and the tag's type when known. A project must have **all** chosen tags (unlike other filters, where several values match any of them), because chosen tags usually describe one project from several sides: `liver` + `mouse`. Projects without tags never match, which the panel says. |
+| Tags row | Above the results, under the Filters row (`frontend/src/search/TagBar.tsx`) | The chosen tags as blue chips, each removable, with their own **Clear all** (the Filters row's **Clear all** leaves tags alone, and this one leaves filters alone). |
+| Suggested tags | In the Tags row; `GET /search/tag-summary` | The 12 most frequent tags among the search's top 2,000 results (most relevant for a text search, otherwise in the chosen sort), each added with one click. Leaves out the organism, tags already chosen, and tags on only one project. Loaded after the results, so it never slows them. |
+| Full-text search | `backend/sql/bioproject_fulltext.sql` | Tags are added to each project's searchable text at the lowest weight (D). See [search.md](search.md#2-full-text-list). |
+
+### Checks on the development data
+
+Text searches were compared before and after adding tags to the full-text text, for six queries (`osteoarthritis synovial fibroblasts`, `soil microbiome`, `BRCA1 mutations`, `mouse liver`, `hepatocellular carcinoma`, `Lotus japonicus`):
+
+- Every untagged project in each query's old top 100 is still found (44 to 67 per query).
+- Result totals stayed the same or grew slightly from new tag matches (`mouse liver` 1,222 → 1,240, `hepatocellular carcinoma` 868 → 876).
+- Untagged projects moved a median of 0–1 places. For two queries a few (6 and 3) moved just below the top 100, pushed by the new matches.
+
+Timings: the tag filter takes about 0.1 seconds per search (it uses the GIN index), the suggested tags 0.03–0.3 seconds, and building the list of 288,262 distinct tags for type-ahead about 4 seconds, once an hour, in the background at startup.
+
+### Next step: merging synonyms
+
+The biggest remaining improvement is mapping tags to standard vocabularies, so that different names for one thing become one tag:
+
+| Type | Vocabulary |
+| --- | --- |
+| organism | NCBI Taxonomy |
+| disease | MONDO or Disease Ontology |
+| tissue, organ | UBERON |
+| cell type | Cell Ontology |
+| cell line | Cellosaurus |
+| chemical or drug | ChEBI |
+
+`mouse`, `mice` and `Mus musculus` would then be one filter value, and a vocabulary's hierarchy would let a search for `liver disease` also find `NASH`. The `labels` column is what makes this practical: each tag only needs to be looked up in the vocabulary for its type.
+
 ## Known limitations
 
-- The tag type (organism, disease and so on) is not stored, only the tag text.
+- Tags tagged before the `labels` column have no type until rebuilt with `--restart`.
+- Only about a quarter of projects have tags so far (see above).
 - Some tags are still noisy, for example long phrases like `growth chamber` or `freshwater microbial`, and capitalised words taken for species names.
 - The same thing can appear under different names, such as `mouse` and `Mus musculus`, or `hepatocellular carcinoma` and `HCC`. No synonyms are merged.
 - Only the first 300 words of long descriptions are read.

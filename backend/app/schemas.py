@@ -86,6 +86,8 @@ class SearchResults(BaseModel):
 class FacetValue(BaseModel):
     value: str
     count: int
+    # Tags only: the tag's type (organism, disease, tissue, ...), when known.
+    group: Optional[str] = None
 
 
 class Stats(BaseModel):

@@ -8,6 +8,7 @@ The model (~440 MB) downloads from Hugging Face on first use and is cached
 in ~/.cache/huggingface.
 """
 
+import functools
 import logging
 import os
 import threading
@@ -38,6 +39,8 @@ def get_model():
         return _model
 
 
+# Cached: the results and their tag summary embed the same search text.
+@functools.lru_cache(maxsize=256)
 def embed(text: str) -> list[float]:
     vec = get_model().encode(text, normalize_embeddings=True, convert_to_numpy=True)
     return vec.tolist()

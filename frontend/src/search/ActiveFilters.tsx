@@ -19,6 +19,7 @@ const PART_LABELS: Record<string, string> = {
 function chipsFor(values: FilterValues): Chip[] {
   const chips: Chip[] = []
   for (const def of ALL_FILTERS) {
+    if (def.key === 'tag') continue // tags have their own row (TagBar)
     for (const key of paramKeys(def)) {
       const value = values[key]
       if (!value) continue
@@ -54,7 +55,9 @@ export default function ActiveFilters({ values, accessions = [], onChange, onRem
   const chips = chipsFor(values)
   if (chips.length === 0 && accessions.length === 0) return null
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-y-1">
+    <div className="mb-2 flex items-start gap-2">
+      <span className="w-12 shrink-0 pt-0.5 text-sm text-gray-500">Filters</span>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-y-1">
       {accessions.map((acc) => (
         <Tag
           key={`accession=${acc}`}
@@ -80,7 +83,8 @@ export default function ActiveFilters({ values, accessions = [], onChange, onRem
           {chip.label}
         </Tag>
       ))}
-      <Button type="link" size="small" onClick={onClear}>
+      </div>
+      <Button type="link" size="small" className="shrink-0" onClick={onClear}>
         Clear all
       </Button>
     </div>

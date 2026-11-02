@@ -55,6 +55,9 @@ Projects with a cosine similarity below `SEMANTIC_MIN_SIMILARITY` (0.5) are drop
 | `title`, `name` | A (highest) |
 | `organism_name` | B |
 | `description` | C |
+| tag words from `bioproject_tags`, except the organism | D (lowest) |
+
+Tags are cleaned-up forms of words already in the title and description (`mice` → `mouse`, `L. japonicus` → `Lotus japonicus`), so they mainly add matches for those forms. They get the lowest weight because only about a quarter of projects have tags so far: at a higher weight, a tagged project would outrank an untagged one with the same title just for having tags. Projects without tags keep exactly the text they had before. On six test queries every untagged project in the old top 100 was still found, and untagged projects moved a median of 0–1 places ([details](bioproject-tags.md#checks-on-the-development-data)). Once every project is tagged, the weight can be raised to B in `backend/sql/bioproject_fulltext.sql`; re-check the rankings when doing so.
 
 The search text goes through `websearch_to_tsquery('english', ...)`. A project must contain every word, after stemming ("mutations" matches "mutation") and dropping stop words ("of", "the"). Users can also write `"quoted phrases"`, `OR`, and `-word` to exclude a word.
 
@@ -84,7 +87,7 @@ So any project ranked reasonably in both lists outranks the first place of eithe
 
 ### 4. Filters, sorting and paging
 
-The sidebar filters are applied to the fused list, then results are sorted by score (`sort=relevance`, the default for text searches) or by a column the user clicks. The total count is the number of fused projects that pass the filters.
+The sidebar filters, including the **Tags** filter, are applied to the fused list, then results are sorted by score (`sort=relevance`, the default for text searches) or by a column the user clicks. The total count is the number of fused projects that pass the filters.
 
 Each result carries:
 
@@ -94,6 +97,10 @@ Each result carries:
 | `text_match` | Whether the project was in the full-text list | A green **Words** tag in the **Match** column |
 
 A project with a **Words** tag and a low similarity got there through the text list; one with no tag got there through the semantic list.
+
+### 5. Suggested tags
+
+After the results arrive, the page asks `GET /search/tag-summary` (same parameters) for the most frequent tags among the top 2,000 results, and shows them as **Suggested** in the Tags row above the table. For a text search this reuses the same fused list (`fused_matches` in `search.py`); the search text's embedding is cached, so it isn't computed twice. See [bioproject-tags.md](bioproject-tags.md#how-search-uses-the-tags).
 
 ## Limits
 

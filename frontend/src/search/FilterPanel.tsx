@@ -15,14 +15,16 @@ interface Props {
 // Options carry their count; it's shown in the dropdown, not in the selected tags.
 // A count of 0 means unknown (a selected value the latest search didn't return).
 const toOptions = (items: FacetValue[]) =>
-  items.map(({ value, count }) => ({ value, label: value, count }))
+  items.map(({ value, count, group }) => ({ value, label: value, count, group }))
 
-const renderOption = (option: { label?: React.ReactNode; data: { count: number } }) => (
+// Tag suggestions also show the tag's type (disease, tissue, ...) when known.
+const renderOption = (option: { label?: React.ReactNode; data: { count: number; group?: string | null } }) => (
   <span className="flex justify-between gap-2">
     <span className="truncate">{option.label}</span>
-    {option.data.count > 0 && (
-      <span className="text-gray-400">{option.data.count.toLocaleString()}</span>
-    )}
+    <span className="shrink-0 text-gray-400">
+      {option.data.group && <span className="mr-2 text-xs">{option.data.group}</span>}
+      {option.data.count > 0 && option.data.count.toLocaleString()}
+    </span>
   </span>
 )
 

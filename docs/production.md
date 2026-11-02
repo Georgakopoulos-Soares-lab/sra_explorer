@@ -21,7 +21,7 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | `Automations/output/bioprojects_schema.sql` | `bioprojects` |
    | `Automations/output/sra_metadata_schema.sql` | `sra_metadata` |
    | `Automations/output/bioproject_embeddings_schema.sql` | `bioproject_embeddings` |
-   | `Automations/TagWords/bioproject_tags_schema.sql` | `bioproject_tags` (tags under each result's title) |
+   | `Automations/TagWords/bioproject_tags_schema.sql` | `bioproject_tags`: tag words, the Tags filter and common tags ([bioproject-tags.md](bioproject-tags.md)). Drops `bioproject_fulltext`, recreated in step 3 |
 
 3. **Create the search objects**, after the tables are loaded:
 
@@ -29,12 +29,12 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | --- | --- | --- |
    | `backend/sql/study_facets.sql` | `study_facets` view and its indexes | a few minutes |
    | `backend/sql/release_date.sql` (after `study_facets.sql`) | `bioprojects.release_date` and `bioprojects_release_date_idx` | about 35 seconds |
-   | `backend/sql/bioproject_fulltext.sql` | `bioproject_fulltext` view and its indexes | about a minute |
+   | `backend/sql/bioproject_fulltext.sql` (after `bioproject_tags` is loaded) | `bioproject_fulltext` view and its indexes | about a minute |
 
 4. **Run `ANALYZE`** so the planner has statistics (`bioproject_fulltext.sql` already analyzes its view):
 
    ```sql
-   ANALYZE bioprojects; ANALYZE sra_metadata; ANALYZE bioproject_embeddings; ANALYZE study_facets;
+   ANALYZE bioprojects; ANALYZE sra_metadata; ANALYZE bioproject_embeddings; ANALYZE study_facets; ANALYZE bioproject_tags;
    ```
 
 5. **Check** that everything in the [index reference](#index-reference) exists:
@@ -63,6 +63,8 @@ Sizes are from the development database (670,720 bioproject rows, 669,736 embedd
 | `sra_metadata_*_idx` | `sra_metadata` `experiment`, `sra_study`, `bioproject`, `biosample`, `organism` | `/runs` filters; run filters when `study_facets` is missing | 0.3–1.2 GB each |
 | `bioproject_embeddings_pkey` | `bioproject_embeddings (bioproject)` | Joining embeddings to projects | 18 MB |
 | `bioproject_embeddings_embedding_idx` | `bioproject_embeddings` HNSW (`vector_cosine_ops`) | Semantic search: the nearest projects to the search text | 2.3 GB |
+| `bioproject_tags_pkey` | `bioproject_tags (bioproject)` | Loading each result's tags | 5 MB |
+| `bioproject_tags_string_to_array_idx` (GIN) | `bioproject_tags (string_to_array(tags, '; '))` | The Tags filter (`tag=`) | 27 MB |
 
 ### Created for search (step 3)
 
@@ -86,6 +88,7 @@ The schema files drop and recreate their tables. Postgres won't drop a table tha
 | `bioprojects` | `DROP MATERIALIZED VIEW IF EXISTS bioproject_fulltext;` | Run `release_date.sql` and `bioproject_fulltext.sql` |
 | `sra_metadata` | `DROP MATERIALIZED VIEW IF EXISTS study_facets;` | Run `study_facets.sql`, then `release_date.sql` |
 | `bioproject_embeddings` | Nothing | Nothing: the schema file recreates the HNSW index |
+| `bioproject_tags` | Nothing: the schema file drops `bioproject_fulltext` itself | Run `bioproject_fulltext.sql` |
 
 Rebuild the embeddings (`Automations/create_embeddings.py`) whenever `bioprojects` gets new projects or changed text; projects without an embedding can only be found through full-text search.
 

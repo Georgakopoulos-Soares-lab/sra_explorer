@@ -49,8 +49,9 @@ Each result is one BioProject and SRA study pair, with all its fields (title, de
 How filters combine:
 
 - Repeat a parameter to match any of several values: `?platform=ILLUMINA&platform=PACBIO_SMRT`.
+- Except `tag`: repeated, a project must have **all** the tags: `?tag=liver&tag=mouse`. Only projects with tags (about a quarter so far) can match.
 - Different parameters must all match.
-- Run filters (`assay_type`, `platform`, `librarylayout`, `sample_country`, ...) match projects that have runs with the given values.
+- Run filters (`assay_type`, `platform`, `librarylayout`, `sample_country`, ...) match projects that have at least one run with all the given values.
 
 Common parameters (`GET /v1/filters` lists all of them):
 
@@ -58,8 +59,9 @@ Common parameters (`GET /v1/filters` lists all of them):
 | --- | --- |
 | `accession` | `PRJNA169753`, `SRP079428` (repeatable, any case) |
 | `organism`, `supergroup`, `data_types` | `organism=Homo sapiens` |
+| `tag` | `tag=osteoarthritis` (values from `/v1/filters/tag?q=...`; see [bioproject-tags.md](bioproject-tags.md)) |
 | `assay_type`, `platform`, `librarylayout`, `sample_country` | `assay_type=RNA-Seq` |
-| `release_from`, `release_to` | `release_from=2020-01-01` |
+| `release_from`, `release_to` | `release_from=2020-01-01` (the `release_date` field: first public run, else project release, else submission) |
 | `min_experiments`, `max_experiments` | `min_experiments=10` |
 | `has_publications`, `has_geo`, `has_grants` | `has_geo=true` |
 | `sort` | `release_desc` (default), `release_asc`, `experiments_desc`, `publications_desc`, ... |

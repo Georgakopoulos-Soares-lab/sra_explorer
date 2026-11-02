@@ -47,6 +47,10 @@ export const api = {
   suggest: (field: string, q: string, signal?: AbortSignal, scope?: Record<string, string[]>) =>
     apiGet<FacetValue[]>('/search/suggest', { ...scope, field, q }, { signal }),
 
+  // The most common tags among a search's top results; takes the search's own parameters.
+  tagSummary: (params: SearchParams, signal?: AbortSignal) =>
+    apiGet<FacetValue[]>('/search/tag-summary', params, { signal }),
+
   stats: (signal?: AbortSignal) => apiGet<Stats>('/search/stats', undefined, { signal }),
 
   // The public API's rate limit and parameters, for the API documentation page.

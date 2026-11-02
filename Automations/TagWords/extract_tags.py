@@ -3,9 +3,10 @@ Build the `bioproject_tags` table: biomedical tag words per bioproject (CPU, inc
 
 Reads ../output/bioprojects.csv (written by create_tables.py) and
 ../output/bioproject_embeddings.tsv (written by create_embeddings.py), and
-writes output/bioproject_tags.tsv with two columns:
+writes output/bioproject_tags.tsv with three columns:
   bioproject  e.g. PRJNA559273
   tags        "; "-separated tag words, e.g. Mus musculus; mouse; osteoarthritis; skin; synovial fibroblast
+  labels      each tag's type, in the same order, e.g. organism; organism; disease; tissue; cell type
 Load it with bioproject_tags_schema.sql.
 
 Pipeline, per bioproject (one row per bioproject; projects repeated per
@@ -21,7 +22,7 @@ sra_study in bioprojects.csv are processed once):
      embeddings and compared (cosine) with its project's embedding. Off-topic
      mentions and stray abbreviations score low and are dropped. Projects
      missing from the embeddings file keep their tags unfiltered.
-  4. The structured organism_name is always added first.
+  4. The structured organism_name is always added first (type "organism").
   Remaining tags are ordered by relevance and capped at --max-tags.
 
 Incremental: bioprojects already present in the output file are skipped, so
@@ -29,6 +30,10 @@ after adding new bioprojects to bioprojects.csv (and their embeddings) just
 rerun the script; it appends only the new ones. The same mechanism resumes an
 interrupted run (a half-written last line is discarded). Use --restart to
 rebuild everything, e.g. after changing LABELS or the thresholds.
+
+An output file from before the labels column (two columns) is upgraded in
+place: its rows get an empty labels field and new rows are written with
+labels. Rerun with --restart to get labels for the old rows too.
 
 Setup (once, from this folder):
   /usr/bin/python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -97,6 +102,8 @@ MIN_SIMILARITY = 0.10    # tag vs project embedding (cosine)
 ACRONYM_MIN_SIMILARITY = 0.25  # stricter for short all-caps tags (OA, AB, IS, ...)
 MAX_TAG_WORDS = 5
 SEP = "; "
+HEADER = "bioproject\ttags\tlabels\n"
+OLD_HEADER = "bioproject\ttags\n"  # before the labels column
 GB_PER_WORKER = 3        # peak RSS of one worker (GLiNER + BioBERT) is ~2.6 GB
 
 STOP_TAGS = {
@@ -266,7 +273,8 @@ def embed_tags(tags):
 
 
 def tag_chunk(items, batch_size, max_tags):
-    """items: [(bioproject, text, organism_name, project vector or None)] -> [(bioproject, [tags])]."""
+    """items: [(bioproject, text, organism_name, project vector or None)]
+    -> [(bioproject, [(tag, label)])], label being the GLiNER type."""
     import torch
 
     # Projects without text get only their organism_name; sort by length for less padding.
@@ -280,7 +288,7 @@ def tag_chunk(items, batch_size, max_tags):
         for i, spans in zip(order, found):
             ents[i] = spans
 
-    candidates = []  # per project: {tag key: display}
+    candidates = []  # per project: {tag key: (display, label)}
     for spans in ents:
         tags = {}
         for span in spans:
@@ -288,25 +296,25 @@ def tag_chunk(items, batch_size, max_tags):
                 continue
             tag = normalise_tag(span["text"], span["label"])
             if tag:
-                tags.setdefault(tag_key(tag), tag)
+                tags.setdefault(tag_key(tag), (tag, span["label"]))
         candidates.append(tags)
-    vectors = embed_tags({t for tags in candidates for t in tags.values()})
+    vectors = embed_tags({t for tags in candidates for t, _ in tags.values()})
 
     out = []
     for (bioproject, _text, organism, project_vec), tags in zip(items, candidates):
         scored = []
-        for tag in tags.values():
+        for tag, label in tags.values():
             sim = float(vectors[tag].astype(np.float32) @ project_vec) if project_vec is not None else 1.0
             min_sim = ACRONYM_MIN_SIMILARITY if is_acronym(tag) else MIN_SIMILARITY
             if sim >= min_sim:
-                scored.append((sim, tag))
+                scored.append((sim, tag, label))
         scored.sort(key=lambda x: -x[0])
-        final = [organism] if organism else []
+        final = [(organism, "organism")] if organism else []
         seen = {tag_key(organism)} if organism else set()
-        for _sim, tag in scored:
+        for _sim, tag, label in scored:
             if tag_key(tag) not in seen:
                 seen.add(tag_key(tag))
-                final.append(tag)
+                final.append((tag, label))
         out.append((bioproject, final[:max_tags]))
     return out
 
@@ -315,6 +323,29 @@ def tag_chunk(items, batch_size, max_tags):
 def clean_tag_field(tag):
     """Tags go into one TSV field joined by SEP (loaded as CSV): keep tabs, newlines, ';' and '"' out."""
     return " ".join(tag.replace(";", ",").replace('"', "'").split())
+
+
+def upgrade_output(path):
+    """Add the labels column to an output file written before it existed.
+
+    Old rows get an empty labels field (loaded as NULL), so the file stays
+    loadable and the run can append rows with labels.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    with open(path, encoding="utf-8") as f:
+        if f.readline() != OLD_HEADER:
+            return
+    tmp = path.with_suffix(".upgrading")
+    with open(path, encoding="utf-8") as src, open(tmp, "w", encoding="utf-8") as dst:
+        next(src)
+        dst.write(HEADER)
+        for line in src:
+            if line.endswith("\n"):  # a half-written last line is dropped, as on resume
+                dst.write(line[:-1] + "\t\n")
+    tmp.replace(path)
+    print(f"upgraded {path} to the three-column format (old rows have no labels; "
+          f"use --restart to label them)", flush=True)
 
 
 def done_bioprojects(path):
@@ -401,6 +432,7 @@ def main():
         args.output.unlink()
 
     t0 = time.time()
+    upgrade_output(args.output)
     done = done_bioprojects(args.output)
     projects = read_projects(args.input, done, args.limit)
     print(f"{len(done):,} bioprojects already tagged, {len(projects):,} to do "
@@ -424,7 +456,7 @@ def main():
     chunks = (projects[i:i + args.chunk_size] for i in range(0, len(projects), args.chunk_size))
     with open(args.output, "a", encoding="utf-8") as out:
         if new_file:
-            out.write("bioproject\ttags\n")
+            out.write(HEADER)
         while True:
             # Keep a bounded window of chunks in flight so memory stays flat.
             while len(pending) < 2 * workers:
@@ -436,9 +468,11 @@ def main():
                 pending.append(pool.submit(tag_chunk, items, args.batch_size, args.max_tags))
             if not pending:
                 break
-            for bioproject, tags in pending.popleft().result():
-                tags = [t for t in (clean_tag_field(t) for t in tags) if t]
-                out.write(f"{bioproject}\t{SEP.join(tags)}\n")
+            for bioproject, tagged in pending.popleft().result():
+                tagged = [(t, label) for t, label in ((clean_tag_field(t), label) for t, label in tagged) if t]
+                tags = [t for t, _ in tagged]
+                labels = [label for _, label in tagged]
+                out.write(f"{bioproject}\t{SEP.join(tags)}\t{SEP.join(labels)}\n")
                 n_tags += len(tags)
                 written += 1
             out.flush()
