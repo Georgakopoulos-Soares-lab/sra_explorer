@@ -32,24 +32,38 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   return qs ? `${url}?${qs}` : url
 }
 
-export async function apiGet<T>(
-  path: string,
-  query?: object,
-  init?: RequestInit,
-): Promise<T> {
+export interface RequestOptions {
+  query?: object
+  // Sent as JSON.
+  body?: unknown
+  headers?: Record<string, string>
+  signal?: AbortSignal
+}
+
+export async function apiRequest<T>(method: 'GET' | 'POST' | 'DELETE', path: string, options: RequestOptions = {}): Promise<T> {
+  const { query, body, headers, signal } = options
   const response = await fetch(buildUrl(path, query as Record<string, QueryValue>), {
-    ...init,
-    method: 'GET',
-    headers: { Accept: 'application/json', ...init?.headers },
+    method,
+    signal,
+    headers: {
+      Accept: 'application/json',
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
   if (!response.ok) {
     // FastAPI errors look like {"detail": "..."} or {"detail": [validation errors]}.
-    const body = await response.json().catch(() => null)
-    const detail = body?.detail
+    const errorBody = await response.json().catch(() => null)
+    const detail = errorBody?.detail
     const message = typeof detail === 'string' ? detail : `Request failed with status ${response.status}`
     throw new ApiError(response.status, message, detail)
   }
 
   return response.json() as Promise<T>
+}
+
+export function apiGet<T>(path: string, query?: object, init?: { signal?: AbortSignal }): Promise<T> {
+  return apiRequest<T>('GET', path, { query, signal: init?.signal })
 }

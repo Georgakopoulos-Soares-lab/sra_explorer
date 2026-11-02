@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import embeddings, models, public_api, schemas, search
+from . import admin, embeddings, models, public_api, schemas, search
 from .database import Base, engine, get_db
 
 logger = logging.getLogger(__name__)
@@ -46,13 +46,15 @@ app = FastAPI(title="SRAscout API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
-    allow_methods=["GET"],
+    # POST and DELETE for the admin normalisation page (admin.py).
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
 app.include_router(search.router)
 app.include_router(public_api.router)
 app.include_router(public_api.docs_router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

@@ -575,6 +575,16 @@ def attribute_values(name: str) -> tuple[tuple[str, int], ...]:
 _tag_cache: tuple[float, tuple[tuple[str, int, Optional[str]], ...], dict[str, Optional[str]]] = (0, (), {})
 
 
+def clear_value_caches() -> None:
+    """Forgets cached filter values and statistics, after the data changed
+    (normalize.py). The next request computes them again."""
+    global _tag_cache, _stats_cache
+    _cache.clear()
+    _narrowed.clear()
+    _tag_cache = (0, (), {})
+    _stats_cache = (0, {})
+
+
 def tag_values() -> tuple[tuple[str, int, Optional[str]], ...]:
     """Every tag with its number of projects and its type, most common first.
 

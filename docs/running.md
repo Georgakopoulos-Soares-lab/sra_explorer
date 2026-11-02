@@ -104,6 +104,7 @@ Backend environment variables:
 | `SEMANTIC_MIN_SIMILARITY` | `0.5` | Text searches leave out projects whose cosine similarity to the text is below this, unless they contain all the words |
 | `TEXT_MIN_SIMILARITY` | `0.3` | Projects that contain all the words are still left out below this similarity |
 | `EMBEDDING_THREADS` | `4` | CPU threads used to embed search text |
+| `ADMIN_CODE` | `srageek` (hardcoded in `backend/app/admin.py`) | Overrides the code the normalisation page must send with each `/admin` request ([normalization.md](normalization.md#access)) |
 
 ## Pages
 
@@ -113,6 +114,7 @@ Backend environment variables:
 | Search | `/search` | Filters for projects and runs, and a results table with links to ENA and NCBI |
 | Files  | `/files/<SRA study>` | A study's runs and their FASTQ download links, from ENA     |
 | API    | `/docs/api` | How to use the public API, with Python examples                  |
+| Normalise | `/admin/normalize` | Admin only, not in the menu: rename filter values across the database, kept as rules for future data loads ([normalization.md](normalization.md)) |
 
 The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results. [filters.md](filters.md) describes every filter, how they combine and narrow each other, and the rows above the results.
 

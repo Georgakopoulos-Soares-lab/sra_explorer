@@ -81,7 +81,7 @@ Filter changes are drafts until **Search** is clicked; unapplied changes are fla
 | Has publications | `has_publications` | Any / Yes / No | `bioprojects.publication_count` |
 | Journal | `journals` | type-ahead | `bioprojects.journals` |
 
-Dropdowns load their options when opened; type-ahead boxes search as you type. Both show the number of projects for each value.
+Dropdowns load their options when opened; type-ahead boxes search as you type. Both show the number of projects for each value. Values can be renamed and merged across the database on the admin normalisation page ([normalization.md](normalization.md)).
 
 Scrolling stays where the pointer is: a dropdown list that reaches its end, or one too short to scroll, never scrolls the panel or the page behind it, and the panel never scrolls the page (`overscroll-behavior` in `frontend/src/index.css`, with a wheel fallback in `FilterPanel.tsx`; the dropdown lists are non-virtual so they scroll natively).
 

@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Index, Text
+from sqlalchemy import BigInteger, DateTime, Index, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -102,6 +102,26 @@ class BioprojectAttributes(Base):
 
     bioproject: Mapped[str] = mapped_column(Text, primary_key=True)
     attributes: Mapped[Any] = mapped_column(JSONB, nullable=False)
+
+
+class ValueNormalization(Base):
+    """A rename of a filter value, recorded by the admin normalisation page.
+
+    Applied to the data when made, and again after every data load
+    (backend/app/normalize.py), in id order. Never dropped by the data
+    loading scripts, so the normalisation survives them.
+    """
+
+    __tablename__ = "value_normalizations"
+    __table_args__ = (Index("value_normalizations_field_idx", "field"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    field: Mapped[str] = mapped_column(Text, nullable=False)  # a key of normalize.FIELDS
+    from_value: Mapped[str] = mapped_column(Text, nullable=False)
+    to_value: Mapped[str] = mapped_column(Text, nullable=False)
+    # Rows changed when the rule was made.
+    rows: Mapped[Optional[int]] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class BioprojectEmbedding(Base):
