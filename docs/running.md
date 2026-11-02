@@ -158,10 +158,10 @@ Dropdown and type-ahead values are cached in the API process for an hour. Empty 
 
 ### Database setup for search
 
-Create the search index once, so the search page's first view loads in milliseconds:
+After creating `study_facets` (below), fill `bioprojects.release_date` and its index. The search page needs this column: it is the Released date the table shows, sorts and filters on, and the index makes the first view load in milliseconds. Run it again after reloading `bioprojects` or `sra_metadata` (about 35 seconds):
 
 ```bash
-docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/search_indexes.sql
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < backend/sql/release_date.sql
 ```
 
 ### Text search needs the `bioproject_fulltext` view
@@ -202,7 +202,9 @@ docker exec sra_explorer_dev psql -U postgres -d postgres -c "REFRESH MATERIALIZ
 
 The API detects the view automatically (it checks once a minute), so no restart is needed. Replace `-d postgres` with your database name if you use a different one.
 
-A project matches a run filter when any of its runs has a selected value. With several run filters, each can be met by a different run of the same project. The run release date filter matches projects whose runs were released within the range.
+A project matches the run filters when one of its runs has a selected value for every run filter.
+
+The Released column, its sort and the release date filter all use `bioprojects.release_date`: the date the project's first run became public, or, failing that, the project's release date, or its submission date. NCBI's project release date alone is missing for about 90% of projects. The column is filled by `backend/sql/release_date.sql`.
 
 ## Production build of the frontend
 

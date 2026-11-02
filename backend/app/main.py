@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -11,10 +12,28 @@ from sqlalchemy.orm import Session
 from . import embeddings, models, public_api, schemas, search
 from .database import Base, engine, get_db
 
+logger = logging.getLogger(__name__)
+
+
+def check_release_date() -> None:
+    """Warn when bioprojects lacks release_date, which reloading the table drops."""
+    with engine.connect() as conn:
+        exists_ = conn.scalar(text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns"
+            " WHERE table_name = 'bioprojects' AND column_name = 'release_date')"
+        ))
+    if not exists_:
+        logger.error(
+            "bioprojects.release_date is missing, so project queries will fail."
+            " Run backend/sql/release_date.sql (after backend/sql/study_facets.sql)."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Only creates tables that don't exist yet; never alters loaded data.
     Base.metadata.create_all(bind=engine)
+    check_release_date()
     threading.Thread(target=search.warm_cache, daemon=True).start()
     threading.Thread(target=embeddings.warm_model, daemon=True).start()
     yield

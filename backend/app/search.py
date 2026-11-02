@@ -72,7 +72,8 @@ PROJECT_FIELDS = {
 }
 
 # Filter name -> (sra_metadata column, study_facets array column). A project
-# matches a run filter when any of its runs has one of the selected values.
+# matches the run filters when one of its runs has one of the selected values
+# for every filter.
 RUN_FIELDS = {
     "assay_type": (R.assay_type, "assay_types"),
     "platform": (R.platform, "platforms"),
@@ -120,8 +121,9 @@ def has_study_facets() -> bool:
     return has_relation("study_facets")
 
 # Filter prefix -> date column; used as <prefix>_from / <prefix>_to.
+# "release" is release_date, the same date the results table shows and sorts by.
 DATE_FIELDS = {
-    "release": B.project_release_date,
+    "release": B.release_date,
     "submitted": B.submitted_date,
     "updated": B.last_update_date,
     "first_publication": B.first_publication_date,
@@ -129,7 +131,7 @@ DATE_FIELDS = {
 
 # Sortable columns; the sort parameter is <name>_asc or <name>_desc.
 SORT_COLUMNS = {
-    "release": B.project_release_date,
+    "release": B.release_date,
     "experiments": B.n_experiments,
     "publications": B.publication_count,
     "bioproject": B.bioproject,
@@ -250,25 +252,30 @@ def build_conditions(f: SearchFilters) -> list:
         if value is not None:
             conditions.append(condition if value else ~condition)
 
+    # The run filters must all be met by the same run of the study.
     selected = {name: getattr(f, name) for name in RUN_FIELDS if getattr(f, name)}
+    run_conditions = [RUN_FIELDS[name][0].in_(v) for name, v in selected.items()]
+    if f.run_release_from:
+        run_conditions.append(R.releasedate >= f.run_release_from)
+    if f.run_release_to:
+        run_conditions.append(R.releasedate <= f.run_release_to)
+    if not run_conditions:
+        return conditions
+    same_run = exists().where(R.sra_study == B.sra_study, *run_conditions)
+
     if has_study_facets():
-        # Each run filter can be met by a different run of the study. For the
-        # date range, the study's runs must have been released within it.
-        run_conditions = [F.c[RUN_FIELDS[name][1]].overlap(v) for name, v in selected.items()]
+        # study_facets only says that some run has each value, so it narrows
+        # the studies quickly; with one condition that is already exact.
+        facet_conditions = [F.c[RUN_FIELDS[name][1]].overlap(v) for name, v in selected.items()]
         if f.run_release_from:
-            run_conditions.append(F.c.last_run_release >= f.run_release_from)
+            facet_conditions.append(F.c.last_run_release >= f.run_release_from)
         if f.run_release_to:
-            run_conditions.append(F.c.first_run_release <= f.run_release_to)
-        if run_conditions:
-            conditions.append(exists().where(F.c.sra_study == B.sra_study, *run_conditions))
+            facet_conditions.append(F.c.first_run_release <= f.run_release_to)
+        conditions.append(exists().where(F.c.sra_study == B.sra_study, *facet_conditions))
+        if len(run_conditions) > 1:
+            conditions.append(same_run)
     else:
-        run_conditions = [RUN_FIELDS[name][0].in_(v) for name, v in selected.items()]
-        if f.run_release_from:
-            run_conditions.append(R.releasedate >= f.run_release_from)
-        if f.run_release_to:
-            run_conditions.append(R.releasedate <= f.run_release_to)
-        if run_conditions:
-            conditions.append(exists().where(R.sra_study == B.sra_study, *run_conditions))
+        conditions.append(same_run)
 
     return conditions
 
@@ -399,7 +406,7 @@ def latest_bioprojects(
     """The most recently released projects, for the search page's first view.
 
     No filters and no total count, so it stays fast on the full table (uses
-    bioprojects_release_date_idx from backend/sql/search_indexes.sql).
+    bioprojects_release_date_idx from backend/sql/release_date.sql).
     """
     stmt = (
         select(B)
@@ -423,14 +430,17 @@ CACHE_SECONDS = 3600
 _cache: dict[str, tuple[float, tuple[tuple[str, int], ...]]] = {}
 
 
-def distinct_values(name: str) -> tuple[tuple[str, int], ...]:
+def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[str, int], ...]:
     """All values of a filter field with their counts, most common first.
 
     Counts are projects for project fields, and studies (or runs, without
-    study_facets) for run fields. Results are cached for an hour. Empty
-    results are not cached, so values appear as soon as data is loaded.
+    study_facets) for run fields. With a supergroup (project fields only),
+    only that supergroup's projects are counted. Results are cached for an
+    hour. Empty results are not cached, so values appear as soon as data is
+    loaded.
     """
-    cached = _cache.get(name)
+    key = name if supergroup is None else f"{name}|{supergroup}"
+    cached = _cache.get(key)
     if cached and cached[0] > time.monotonic():
         return cached[1]
 
@@ -444,7 +454,10 @@ def distinct_values(name: str) -> tuple[tuple[str, int], ...]:
         column, multivalue = PROJECT_FIELDS[name]
         value = func.unnest(split_values(column)) if multivalue else column
 
-    sub = select(value.label("value")).where(column.is_not(None)).subquery()
+    sub = select(value.label("value")).where(column.is_not(None))
+    if supergroup is not None:
+        sub = sub.where(B.supergroup == supergroup)
+    sub = sub.subquery()
     n = func.count().label("n")
     stmt = (
         select(sub.c.value, n)
@@ -455,8 +468,17 @@ def distinct_values(name: str) -> tuple[tuple[str, int], ...]:
     with engine.connect() as conn:
         values = tuple((row.value, row.n) for row in conn.execute(stmt))
     if values:
-        _cache[name] = (time.monotonic() + CACHE_SECONDS, values)
+        _cache[key] = (time.monotonic() + CACHE_SECONDS, values)
     return values
+
+
+def organisms_in(supergroups: list[str]) -> list[tuple[str, int]]:
+    """Organisms of the given supergroups with their project counts, most common first."""
+    counts: dict[str, int] = {}
+    for supergroup in supergroups:
+        for organism, n in distinct_values("organism", supergroup):
+            counts[organism] = counts.get(organism, 0) + n
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
 
 
 def warm_cache() -> None:
@@ -478,6 +500,11 @@ def warm_cache() -> None:
             distinct_values(name)
         except Exception:
             logger.exception("Could not load filter values for %s", name)
+    try:
+        for supergroup, _ in distinct_values("supergroup"):
+            distinct_values("organism", supergroup)
+    except Exception:
+        logger.exception("Could not load organisms by supergroup")
 
 
 @router.get("/facets/{field}", response_model=list[schemas.FacetValue])
@@ -490,11 +517,14 @@ def suggest(
     field: Literal[tuple(SUGGEST_FIELDS)],  # type: ignore[valid-type]
     q: str = "",
     limit: int = Query(20, ge=1, le=100),
+    # Narrows organism suggestions to these supergroups; ignored for other fields.
+    supergroup: Annotated[list[str], Query()] = [],
 ):
     needle = q.strip().lower()
+    values = organisms_in(supergroup) if field == "organism" and supergroup else distinct_values(field)
     matches = (
         {"value": v, "count": n}
-        for v, n in distinct_values(field)
+        for v, n in values
         if needle in v.lower()
     )
     return [m for _, m in zip(range(limit), matches)]

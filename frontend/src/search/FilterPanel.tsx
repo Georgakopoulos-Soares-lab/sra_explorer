@@ -100,6 +100,16 @@ function SuggestFilter({ def, values, onChange }: Props & { def: FilterDef }) {
   const [options, setOptions] = useState<FacetValue[]>([])
   const [status, setStatus] = useState<LoadStatus>('idle')
   const request = useRef<{ timer?: number; controller?: AbortController }>({})
+  const scopeKey = def.kind === 'suggest' ? def.scopedBy : undefined
+  const scopeValues = scopeKey ? ((values[scopeKey] as string[] | undefined) ?? []) : []
+  const scope = scopeKey && scopeValues.length ? { [scopeKey]: scopeValues } : undefined
+  const scopeId = scopeValues.join('\n')
+
+  // Suggestions for the old scope are stale; load again on the next focus.
+  useEffect(() => {
+    setOptions([])
+    setStatus('idle')
+  }, [scopeId])
 
   const search = (q: string) => {
     window.clearTimeout(request.current.timer)
@@ -109,7 +119,7 @@ function SuggestFilter({ def, values, onChange }: Props & { def: FilterDef }) {
       request.current.controller = controller
       setStatus('loading')
       api
-        .suggest(def.key, q, controller.signal)
+        .suggest(def.key, q, controller.signal, scope)
         .then((values) => {
           setOptions(values)
           // No matches for an empty query means the field has no values at all.
@@ -269,7 +279,7 @@ export default function FilterPanel(props: Props) {
     <Collapse
       ghost
       size="small"
-      defaultActiveKey={['organism', 'project']}
+      defaultActiveKey={['organism']}
       items={FILTER_SECTIONS.map((section) => {
         const active = section.filters.filter((f) => isActive(props.values, f)).length
         return {

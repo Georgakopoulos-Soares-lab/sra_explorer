@@ -4,7 +4,7 @@ from typing import Any, Optional
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import BigInteger, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
@@ -35,6 +35,8 @@ class Bioproject(Base):
     objectives: Mapped[Optional[str]] = mapped_column(Text)
     relevance: Mapped[Optional[str]] = mapped_column(Text)
     project_release_date: Mapped[Optional[date]]
+    # Filled by backend/sql/release_date.sql; see there for how it's chosen.
+    release_date: Mapped[Optional[date]]
     geo_accessions: Mapped[Optional[str]] = mapped_column(Text)
     center_ids: Mapped[Optional[Any]] = mapped_column(JSONB)
     external_links: Mapped[Optional[Any]] = mapped_column(JSONB)
@@ -52,6 +54,34 @@ class Bioproject(Base):
     organization_country: Mapped[Optional[str]] = mapped_column(Text)
     access: Mapped[Optional[str]] = mapped_column(Text)
     parent_projects: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Loaded with the project in one extra query per result list (selectin).
+    tag_row: Mapped[Optional["BioprojectTags"]] = relationship(
+        primaryjoin="foreign(BioprojectTags.bioproject) == Bioproject.bioproject",
+        uselist=False,
+        viewonly=True,
+        lazy="selectin",
+    )
+
+    @property
+    def tags(self) -> list[str]:
+        """The project's tag words, most relevant first."""
+        if self.tag_row is None:
+            return []
+        return [t for t in dict.fromkeys(self.tag_row.tags.split("; ")) if t.strip()]
+
+
+class BioprojectTags(Base):
+    """Tag words per bioproject: organisms, diseases, tissues, cell types, ...
+
+    Loaded by Automations/TagWords/bioproject_tags_schema.sql. One row per
+    bioproject; tags is a "; "-separated list, most relevant first.
+    """
+
+    __tablename__ = "bioproject_tags"
+
+    bioproject: Mapped[str] = mapped_column(Text, primary_key=True)
+    tags: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class BioprojectEmbedding(Base):

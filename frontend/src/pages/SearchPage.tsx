@@ -25,6 +25,14 @@ const LATEST_COUNT = 100
 // Shown under the search box; clicking it runs this search.
 const EXAMPLE_QUERY = 'RNA-seq of breast cancer tumors treated with tamoxifen'
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
+// Tags shown under a title; the rest are counted in a "+N" tag (hover lists them).
+const MAX_TAGS = 6
+const rowKey = (p: SearchHit) => `${p.bioproject}:${p.sra_study}`
+// An expanded project and its details share a tint and a blue bar on the left,
+// and a border under the details marks where the next project starts.
+const EXPANDED_ROW = '[&>td]:!bg-blue-50 [&>td:first-child]:shadow-[inset_3px_0_0_#1677ff]'
+const EXPANDED_DETAILS =
+  '[&>td]:!bg-blue-50/40 [&>td]:shadow-[inset_3px_0_0_#1677ff] [&>td]:!border-b-2 [&>td]:!border-b-blue-200'
 
 // Asks ENA (from the browser) how many runs the study has, and links to the
 // files page. The files themselves are never listed here: a study can have
@@ -78,13 +86,18 @@ function FilesSummary({ study }: { study: string }) {
 function ProjectDetails({ project: p }: { project: Bioproject }) {
   const publications = projectPublications(p)
   const items = [
-    { label: 'Organization', value: [p.organization, p.organization_country].filter(Boolean).join(', ') },
-    { label: 'Relevance', value: p.relevance },
-    { label: 'Objectives', value: p.objectives },
-    { label: 'Target', value: [p.target_material, p.target_capture, p.sample_scope].filter(Boolean).join(' · ') },
-    { label: 'Access', value: p.access },
-    { label: 'Submitted', value: p.submitted_date },
-    { label: 'Last updated', value: p.last_update_date },
+    {
+      label: 'Organization',
+      value: p.organization && (
+        <span>
+          {p.organization}
+          <Typography.Text type="secondary">
+            {' · '}
+            {p.organization_country ?? 'country not given'}
+          </Typography.Text>
+        </span>
+      ),
+    },
     {
       label: 'GEO',
       value: p.geo_accessions && (
@@ -112,10 +125,8 @@ function ProjectDetails({ project: p }: { project: Bioproject }) {
         />
       )}
       {publications.length > 0 && (
-        <div>
-          <div className="mb-1 font-medium">
-            Publications <span className="font-normal text-gray-500">({publications.length})</span>
-          </div>
+        <div className="max-w-4xl border-t border-gray-200 pt-2">
+          <div className="mb-1 text-xs text-gray-500">Publications ({publications.length})</div>
           <Publications items={publications} />
         </div>
       )}
@@ -144,6 +155,7 @@ export default function SearchPage() {
   const dirty = filtersKey(draft) + queryDraft.trim() !== appliedKey
 
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
 
   // With no filters applied, the page shows the latest projects instead of
   // searching the whole table, and pages and sorts nothing on the server.
@@ -235,11 +247,18 @@ export default function SearchPage() {
           <Typography.Paragraph ellipsis={{ rows: 2, tooltip: v || p.name }} className="!mb-0">
             {v || p.name || <Typography.Text type="secondary">Untitled</Typography.Text>}
           </Typography.Paragraph>
-          <div className="mt-1 flex flex-wrap gap-y-1">
-            {splitList(p.data_types).map((t) => (
-              <Tag key={t} color="blue" className="!text-xs">{t}</Tag>
-            ))}
-          </div>
+          {p.tags.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-y-1">
+              {p.tags.slice(0, MAX_TAGS).map((t) => (
+                <Tag key={t} color="blue" className="!text-xs">{t}</Tag>
+              ))}
+              {p.tags.length > MAX_TAGS && (
+                <Tag className="!text-xs" title={p.tags.slice(MAX_TAGS).join(', ')}>
+                  +{p.tags.length - MAX_TAGS}
+                </Tag>
+              )}
+            </div>
+          )}
         </div>
       ),
     },
@@ -263,7 +282,12 @@ export default function SearchPage() {
       render: (v: number | null) => v?.toLocaleString(),
     },
     { title: 'Publications', dataIndex: 'publication_count', width: 130, align: 'right', ...sortable('publications') },
-    { title: 'Released', dataIndex: 'project_release_date', width: 112, ...sortable('release') },
+    {
+      title: <span title="When the project's first run became public on SRA">Released</span>,
+      dataIndex: 'release_date',
+      width: 112,
+      ...sortable('release'),
+    },
   ]
   if (state.semanticQuery) {
     columns.splice(1, 0, {
@@ -406,7 +430,8 @@ export default function SearchPage() {
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}
 
         <Table<SearchHit>
-          rowKey={(p) => `${p.bioproject}:${p.sra_study}`}
+          rowKey={rowKey}
+          rowClassName={(p) => (expandedKeys.includes(rowKey(p)) ? EXPANDED_ROW : '')}
           columns={columns}
           dataSource={error ? [] : (results?.items ?? [])}
           loading={loading}
@@ -417,6 +442,9 @@ export default function SearchPage() {
           expandable={{
             expandedRowRender: (p) => <ProjectDetails project={p} />,
             expandRowByClick: true,
+            expandedRowKeys: expandedKeys,
+            onExpandedRowsChange: (keys) => setExpandedKeys(keys as string[]),
+            expandedRowClassName: EXPANDED_DETAILS,
           }}
           pagination={{
             current: state.page,

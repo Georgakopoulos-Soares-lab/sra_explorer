@@ -42,9 +42,10 @@ export const api = {
   facet: (field: string, signal?: AbortSignal) =>
     apiGet<FacetValue[]>(`/search/facets/${encodeURIComponent(field)}`, undefined, { signal }),
 
-  // Matching values for filters with too many values for a dropdown.
-  suggest: (field: string, q: string, signal?: AbortSignal) =>
-    apiGet<FacetValue[]>('/search/suggest', { field, q }, { signal }),
+  // Matching values for filters with too many values for a dropdown. `scope`
+  // adds other filters' values that narrow the results (e.g. supergroup for organism).
+  suggest: (field: string, q: string, signal?: AbortSignal, scope?: Record<string, string[]>) =>
+    apiGet<FacetValue[]>('/search/suggest', { ...scope, field, q }, { signal }),
 
   stats: (signal?: AbortSignal) => apiGet<Stats>('/search/stats', undefined, { signal }),
 

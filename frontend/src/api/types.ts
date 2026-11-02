@@ -20,6 +20,8 @@ export interface Bioproject {
   objectives: string | null
   relevance: string | null
   project_release_date: string | null
+  // First public run, else project release, else submission (backend/sql/release_date.sql).
+  release_date: string | null
   geo_accessions: string | null
   center_ids: unknown
   external_links: unknown
@@ -37,6 +39,8 @@ export interface Bioproject {
   organization_country: string | null
   access: string | null
   parent_projects: string | null
+  // From bioproject_tags: organisms, diseases, tissues, cell types, ... most relevant first.
+  tags: string[]
 }
 
 export interface SraRun {

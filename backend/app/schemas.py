@@ -26,6 +26,7 @@ class BioprojectOut(BaseModel):
     objectives: Optional[str] = None
     relevance: Optional[str] = None
     project_release_date: Optional[date] = None
+    release_date: Optional[date] = None
     geo_accessions: Optional[str] = None
     center_ids: Optional[Any] = None
     external_links: Optional[Any] = None
@@ -43,6 +44,8 @@ class BioprojectOut(BaseModel):
     organization_country: Optional[str] = None
     access: Optional[str] = None
     parent_projects: Optional[str] = None
+    # From bioproject_tags, most relevant first.
+    tags: list[str] = []
 
 
 class SraMetadataOut(BaseModel):

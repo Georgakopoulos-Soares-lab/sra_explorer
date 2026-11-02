@@ -262,7 +262,7 @@ def get(url, params=None):
               <li>
                 Run parameters (<Text code>assay_type</Text>, <Text code>platform</Text>,{' '}
                 <Text code>librarylayout</Text>, <Text code>sample_country</Text>, …) match projects that have
-                runs with those values.
+                at least one run with all of those values.
               </li>
             </ul>
             <Paragraph>The most used parameters (all of them are listed under <a href="#parameters">Search parameters</a>):</Paragraph>
@@ -273,7 +273,7 @@ def get(url, params=None):
                 { name: 'supergroup', type: 'Text', description: 'e.g. Bacteria, Eukaryotes, Viruses' },
                 { name: 'assay_type', type: 'Text', description: 'Run assay type, e.g. RNA-Seq, WGS, AMPLICON' },
                 { name: 'platform', type: 'Text', description: 'e.g. ILLUMINA, OXFORD_NANOPORE, PACBIO_SMRT' },
-                { name: 'release_from / release_to', type: 'Date', description: 'Project release date range, YYYY-MM-DD' },
+                { name: 'release_from / release_to', type: 'Date', description: <>Range of <Text code>release_date</Text>, YYYY-MM-DD, both days included</> },
                 { name: 'min_experiments', type: 'Integer', description: 'Projects with at least this many experiments' },
                 { name: 'has_publications', type: 'true / false', description: 'Only projects with (or without) publications' },
                 { name: 'sort', type: 'Text', description: <>Order of results. Default <Text code>release_desc</Text> (newest first).</> },
@@ -299,7 +299,7 @@ def get(url, params=None):
       "title": "Whole genome sequence of Lactobacillus acetotolerans G3",
       "organism_name": "Lactobacillus acetotolerans",
       "n_experiments": 1,
-      "project_release_date": "2026-05-13",
+      "release_date": "2026-05-13",
       "publication_count": 0,
       "...": "all other fields"
     }
@@ -506,7 +506,7 @@ while True:
     time.sleep(WAIT)
 
 with open("projects.csv", "w", newline="") as f:
-    writer = csv.DictWriter(f, fieldnames=["bioproject", "sra_study", "title", "organism_name", "project_release_date"])
+    writer = csv.DictWriter(f, fieldnames=["bioproject", "sra_study", "title", "organism_name", "release_date"])
     writer.writeheader()
     for p in projects:
         writer.writerow({k: p[k] for k in writer.fieldnames})

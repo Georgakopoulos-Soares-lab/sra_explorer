@@ -21,13 +21,14 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | `Automations/output/bioprojects_schema.sql` | `bioprojects` |
    | `Automations/output/sra_metadata_schema.sql` | `sra_metadata` |
    | `Automations/output/bioproject_embeddings_schema.sql` | `bioproject_embeddings` |
+   | `Automations/TagWords/bioproject_tags_schema.sql` | `bioproject_tags` (tags under each result's title) |
 
 3. **Create the search objects**, after the tables are loaded:
 
    | File | Creates | Time on the full data |
    | --- | --- | --- |
-   | `backend/sql/search_indexes.sql` | `bioprojects_release_date_idx` | seconds |
    | `backend/sql/study_facets.sql` | `study_facets` view and its indexes | a few minutes |
+   | `backend/sql/release_date.sql` (after `study_facets.sql`) | `bioprojects.release_date` and `bioprojects_release_date_idx` | about 35 seconds |
    | `backend/sql/bioproject_fulltext.sql` | `bioproject_fulltext` view and its indexes | about a minute |
 
 4. **Run `ANALYZE`** so the planner has statistics (`bioproject_fulltext.sql` already analyzes its view):
@@ -67,7 +68,8 @@ Sizes are from the development database (670,720 bioproject rows, 669,736 embedd
 
 | Object | Defined in | Used by | Without it |
 | --- | --- | --- | --- |
-| `bioprojects_release_date_idx` | `search_indexes.sql` | The search page's first view (latest projects) | The first view scans the whole table |
+| `bioprojects.release_date` column | `release_date.sql` | The Released column, its sort and the release date filter | Project queries fail; the API logs an error at startup |
+| `bioprojects_release_date_idx` | `release_date.sql` | The search page's first view (latest projects) | The first view scans the whole table |
 | `study_facets` view + 11 indexes | `study_facets.sql` | Run filters (assay type, platform, sample country, …) and their dropdown values | Each run filter scans `sra_metadata`: one to two minutes per search |
 | `bioproject_fulltext` view | `bioproject_fulltext.sql` | Full-text half of the hybrid text search | Text searches are semantic only |
 | `bioproject_fulltext_document_idx` (GIN) | `bioproject_fulltext.sql` | Finding projects that contain the search words (142 MB) | — |
@@ -77,12 +79,12 @@ Don't create a full-text index directly on `bioprojects`: search reads the store
 
 ## Reloading data
 
-The schema files drop and recreate their tables. Postgres won't drop a table that a view is built on, so drop the view first, then recreate it after the load. Recreating the table also removes its indexes, which the schema file adds back except for the search ones.
+The schema files drop and recreate their tables. Postgres won't drop a table that a view is built on, so drop the view first, then recreate it after the load. Recreating the table also removes its indexes, which the schema file adds back except for the search ones. Reloading `bioprojects` also drops its `release_date` column, so run `backend/sql/release_date.sql` again, after `study_facets` is back.
 
 | To reload | Before | After |
 | --- | --- | --- |
-| `bioprojects` | `DROP MATERIALIZED VIEW IF EXISTS bioproject_fulltext;` | Run `search_indexes.sql` and `bioproject_fulltext.sql` |
-| `sra_metadata` | `DROP MATERIALIZED VIEW IF EXISTS study_facets;` | Run `study_facets.sql` |
+| `bioprojects` | `DROP MATERIALIZED VIEW IF EXISTS bioproject_fulltext;` | Run `release_date.sql` and `bioproject_fulltext.sql` |
+| `sra_metadata` | `DROP MATERIALIZED VIEW IF EXISTS study_facets;` | Run `study_facets.sql`, then `release_date.sql` |
 | `bioproject_embeddings` | Nothing | Nothing: the schema file recreates the HNSW index |
 
 Rebuild the embeddings (`Automations/create_embeddings.py`) whenever `bioprojects` gets new projects or changed text; projects without an embedding can only be found through full-text search.

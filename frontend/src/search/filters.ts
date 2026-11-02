@@ -4,8 +4,9 @@
 export type FilterDef =
   // Multi-select with options from /search/facets.
   | { kind: 'select'; key: string; label: string }
-  // Multi-select that searches /search/suggest as the user types.
-  | { kind: 'suggest'; key: string; label: string }
+  // Multi-select that searches /search/suggest as the user types. `scopedBy`
+  // names another filter whose selected values narrow the suggestions.
+  | { kind: 'suggest'; key: string; label: string; scopedBy?: string }
   // Date range, sent as <key>_from / <key>_to.
   | { kind: 'dateRange'; key: string; label: string }
   // Min/max numbers, sent as min_<key> / max_<key>.
@@ -27,28 +28,14 @@ export const FILTER_SECTIONS: FilterSection[] = [
     key: 'organism',
     title: 'Organism',
     filters: [
-      { kind: 'suggest', key: 'organism', label: 'Organism' },
       { kind: 'select', key: 'supergroup', label: 'Supergroup' },
-    ],
-  },
-  {
-    key: 'project',
-    title: 'Project type',
-    filters: [
-      { kind: 'select', key: 'data_types', label: 'Data types' },
-      { kind: 'select', key: 'objectives', label: 'Objectives' },
-      { kind: 'select', key: 'relevance', label: 'Relevance' },
-      { kind: 'select', key: 'target_material', label: 'Target material' },
-      { kind: 'select', key: 'target_capture', label: 'Target capture' },
-      { kind: 'select', key: 'sample_scope', label: 'Sample scope' },
-      { kind: 'select', key: 'method_type', label: 'Method' },
-      { kind: 'select', key: 'access', label: 'Access' },
+      { kind: 'suggest', key: 'organism', label: 'Organism', scopedBy: 'supergroup' },
     ],
   },
   {
     key: 'sequencing',
     title: 'Sequencing runs',
-    hint: 'Shows projects that have runs matching each of these.',
+    hint: 'Shows projects that have a run matching all of these.',
     filters: [
       { kind: 'select', key: 'assay_type', label: 'Assay type' },
       { kind: 'select', key: 'platform', label: 'Platform' },
@@ -56,39 +43,19 @@ export const FILTER_SECTIONS: FilterSection[] = [
       { kind: 'select', key: 'librarysource', label: 'Library source' },
       { kind: 'select', key: 'librarylayout', label: 'Library layout' },
       { kind: 'select', key: 'libraryselection', label: 'Library selection' },
-      { kind: 'suggest', key: 'run_organism', label: 'Run organism' },
-      { kind: 'select', key: 'sample_country', label: 'Sample country' },
       { kind: 'suggest', key: 'center_name', label: 'Sequencing center' },
-      { kind: 'dateRange', key: 'run_release', label: 'Run released' },
-    ],
-  },
-  {
-    key: 'dates',
-    title: 'Dates',
-    filters: [
-      { kind: 'dateRange', key: 'release', label: 'Project released' },
-      { kind: 'dateRange', key: 'submitted', label: 'Submitted' },
-      { kind: 'dateRange', key: 'updated', label: 'Last updated' },
-      { kind: 'dateRange', key: 'first_publication', label: 'First publication' },
-    ],
-  },
-  {
-    key: 'size',
-    title: 'Size and publications',
-    filters: [
-      { kind: 'numberRange', key: 'experiments', label: 'Number of experiments' },
-      { kind: 'min', key: 'publications', label: 'Minimum publications' },
-      { kind: 'flag', key: 'has_publications', label: 'Has publications' },
-      { kind: 'flag', key: 'has_geo', label: 'Has GEO data' },
-      { kind: 'flag', key: 'has_grants', label: 'Has grants' },
+      // Same date as the results table's Released column.
+      { kind: 'dateRange', key: 'release', label: 'Released' },
     ],
   },
   {
     key: 'submitter',
-    title: 'Submitter',
+    title: 'Submitter, size and publications',
     filters: [
       { kind: 'suggest', key: 'organization', label: 'Organization' },
       { kind: 'select', key: 'organization_country', label: 'Country' },
+      { kind: 'numberRange', key: 'experiments', label: 'Number of experiments' },
+      { kind: 'flag', key: 'has_publications', label: 'Has publications' },
       { kind: 'suggest', key: 'journals', label: 'Journal' },
     ],
   },
