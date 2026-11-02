@@ -12,6 +12,7 @@ Two scripts turn this into a small, consistent record per BioProject:
 | `Automations/output/jattr_key_counts_normalized.tsv` | Survey output with SRA suffixes stripped (`tissue_sam_ss_dpl145` and `tissue_run` count as `tissue`) |
 | `Automations/output/bioproject_attributes.tsv` | **Pipeline output**: one row per BioProject |
 | `Automations/output/bioproject_attributes_coverage.tsv` | How many runs and BioProjects have a value for each field |
+| `Automations/output/bioproject_attributes_schema.sql` | Creates the `bioproject_attributes` table and loads the pipeline output into it ([below](#loading-into-the-database)) |
 
 ## Output
 
@@ -97,6 +98,39 @@ Run and project percentages differ because a few very large pathogen-surveillanc
 ### 4. Aggregate per BioProject
 
 The file is split into 256 MB byte ranges handled by parallel workers. Each worker counts, per project and field, how many runs carry each value (up to 200 distinct values per project and field; beyond that new values are counted as overflow). The parent process merges the counts and writes the 10 most frequent values per field.
+
+## Loading into the database
+
+`Automations/output/bioproject_attributes_schema.sql` drops and recreates the `bioproject_attributes` table and loads `bioproject_attributes.tsv` into it. Update the `\copy` path in it for your machine first, then:
+
+```bash
+psql -d <db> -f Automations/output/bioproject_attributes_schema.sql
+# or, into the development container (copy the TSV into it first):
+docker cp Automations/output/bioproject_attributes.tsv sra_explorer_dev:/tmp/
+docker exec -i sra_explorer_dev psql -U postgres -d postgres < Automations/output/bioproject_attributes_schema.sql
+```
+
+```sql
+CREATE TABLE bioproject_attributes (
+    bioproject  TEXT NOT NULL,   -- PRIMARY KEY, join to bioprojects ON bioproject
+    attributes  JSONB NOT NULL   -- the JSON object described under Output
+);
+```
+
+The JSON is loaded as CSV with a quote character that never occurs in the file (`QUOTE E'\x01'`). The default CSV quote `"` would break on the JSON's own quotes, and the text format would turn escapes such as `\"` and `\\` into other characters and so invalidate the JSON. With the unused quote character each line is split on the tab only and the JSON is stored exactly as written. This was tested with values containing quotes, backslashes, escaped tabs and newlines, and non-ASCII text.
+
+The file also creates a GIN index (`jsonb_path_ops`) for containment queries:
+
+```sql
+-- Projects with female samples from the liver
+SELECT bioproject FROM bioproject_attributes
+WHERE attributes @> '{"sex": ["female"], "tissue": ["liver"]}';
+
+-- One field's values for a project
+SELECT attributes->'tissue' FROM bioproject_attributes WHERE bioproject = 'PRJDB10518';
+```
+
+Containment matches values exactly, including case, so `"tissue": ["Liver"]` and `["liver"]` are different. The file loads only the per-BioProject output; the optional per-run file (`--per-run`, about 5 GB) has no table. The backend doesn't use this table yet.
 
 ## Running it again
 

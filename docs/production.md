@@ -21,6 +21,7 @@ Do these steps in order on the production database. Replace `<db>` with the data
    | `Automations/output/bioprojects_schema.sql` | `bioprojects` |
    | `Automations/output/sra_metadata_schema.sql` | `sra_metadata` |
    | `Automations/output/bioproject_embeddings_schema.sql` | `bioproject_embeddings` |
+   | `Automations/output/bioproject_attributes_schema.sql` | `bioproject_attributes`: sample attributes from `jattr` ([jattr-normalization.md](jattr-normalization.md)). Not used by the API yet |
    | `Automations/TagWords/bioproject_tags_schema.sql` | `bioproject_tags`: tag words, the Tags filter and common tags ([bioproject-tags.md](bioproject-tags.md)). Drops `bioproject_fulltext`, recreated in step 3 |
 
 3. **Create the search objects**, after the tables are loaded:
