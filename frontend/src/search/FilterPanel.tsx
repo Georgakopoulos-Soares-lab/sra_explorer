@@ -1,7 +1,7 @@
 import { Badge, Collapse, DatePicker, InputNumber, Segmented, Select, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
-import { api, type FacetValue } from '../api'
+import { api, type FacetValue, type SearchParams } from '../api'
 import { FILTER_SECTIONS, paramKeys, type FilterDef } from './filters'
 import type { FilterValues, ParamUpdate } from './useSearchState'
 
@@ -28,19 +28,32 @@ const renderOption = (option: { label?: React.ReactNode; data: { count: number; 
   </span>
 )
 
-// Shared across filter panels (sidebar and drawer). Failed or empty loads are
-// forgotten, so the next open tries again (e.g. after data has been loaded).
+// The other selected filters, which narrow a filter's options to values found
+// among the projects matching them. The filter's own selection is left out, so
+// more of its values can still be chosen. Returns the context and a key for it.
+function contextFor(def: FilterDef, values: FilterValues): [SearchParams, string] {
+  const own = paramKeys(def)
+  const context = Object.fromEntries(
+    Object.entries(values).filter(([k, v]) => !own.includes(k) && v != null && v !== ''),
+  ) as SearchParams
+  return [context, JSON.stringify(Object.entries(context).sort())]
+}
+
+// Shared across filter panels (sidebar and drawer), by field and context.
+// Failed or empty loads are forgotten, so the next open tries again (e.g.
+// after data has been loaded).
 const facetRequests = new Map<string, Promise<FacetValue[]>>()
 
-function loadFacet(field: string): Promise<FacetValue[]> {
-  let request = facetRequests.get(field)
+function loadFacet(field: string, context: SearchParams, contextKey: string): Promise<FacetValue[]> {
+  const key = `${field}|${contextKey}`
+  let request = facetRequests.get(key)
   if (!request) {
-    request = api.facet(field).then((values) => {
-      if (values.length === 0) facetRequests.delete(field)
+    request = api.facet(field, context).then((values) => {
+      if (values.length === 0) facetRequests.delete(key)
       return values
     })
-    request.catch(() => facetRequests.delete(field))
-    facetRequests.set(field, request)
+    request.catch(() => facetRequests.delete(key))
+    facetRequests.set(key, request)
   }
   return request
 }
@@ -61,19 +74,27 @@ const STATUS_TEXT: Record<LoadStatus, string> = {
   error: "Couldn't load values. Is the API running?",
 }
 
-// Loads its options the first time the dropdown opens.
+// No options for an empty query once other filters are chosen means none of
+// the matching projects has a value, not that the field is empty.
+const emptyStatus = (contextKey: string): LoadStatus => (contextKey === '[]' ? 'empty' : 'loaded')
+
+// Loads its options when the dropdown opens, again whenever the other filters
+// have changed since.
 function SelectFilter({ def, values, onChange }: Props & { def: FilterDef }) {
   const selected = (values[def.key] as string[] | undefined) ?? []
+  const [context, contextKey] = contextFor(def, values)
   const [options, setOptions] = useState<FacetValue[]>([])
   const [status, setStatus] = useState<LoadStatus>('idle')
+  const [loadedFor, setLoadedFor] = useState<string>()
 
   const load = () => {
-    if (status === 'loading' || status === 'loaded') return
+    if (loadedFor === contextKey && status !== 'error' && status !== 'empty') return
+    setLoadedFor(contextKey)
     setStatus('loading')
-    loadFacet(def.key)
+    loadFacet(def.key, context, contextKey)
       .then((values) => {
         setOptions(values)
-        setStatus(values.length ? 'loaded' : 'empty')
+        setStatus(values.length ? 'loaded' : emptyStatus(contextKey))
       })
       .catch(() => setStatus('error'))
   }
@@ -102,16 +123,14 @@ function SuggestFilter({ def, values, onChange }: Props & { def: FilterDef }) {
   const [options, setOptions] = useState<FacetValue[]>([])
   const [status, setStatus] = useState<LoadStatus>('idle')
   const request = useRef<{ timer?: number; controller?: AbortController }>({})
-  const scopeKey = def.kind === 'suggest' ? def.scopedBy : undefined
-  const scopeValues = scopeKey ? ((values[scopeKey] as string[] | undefined) ?? []) : []
-  const scope = scopeKey && scopeValues.length ? { [scopeKey]: scopeValues } : undefined
-  const scopeId = scopeValues.join('\n')
+  const [context, contextKey] = contextFor(def, values)
 
-  // Suggestions for the old scope are stale; load again on the next focus.
+  // Suggestions for other filters than the current ones are stale; load again
+  // on the next focus.
   useEffect(() => {
     setOptions([])
     setStatus('idle')
-  }, [scopeId])
+  }, [contextKey])
 
   const search = (q: string) => {
     window.clearTimeout(request.current.timer)
@@ -121,11 +140,11 @@ function SuggestFilter({ def, values, onChange }: Props & { def: FilterDef }) {
       request.current.controller = controller
       setStatus('loading')
       api
-        .suggest(def.key, q, controller.signal, scope)
+        .suggest(def.key, q, controller.signal, context)
         .then((values) => {
           setOptions(values)
           // No matches for an empty query means the field has no values at all.
-          setStatus(values.length || q ? 'loaded' : 'empty')
+          setStatus(values.length || q ? 'loaded' : emptyStatus(contextKey))
         })
         .catch(() => {
           if (!controller.signal.aborted) setStatus('error')

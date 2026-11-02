@@ -4,9 +4,8 @@
 export type FilterDef =
   // Multi-select with options from /search/facets.
   | { kind: 'select'; key: string; label: string }
-  // Multi-select that searches /search/suggest as the user types. `scopedBy`
-  // names another filter whose selected values narrow the suggestions.
-  | { kind: 'suggest'; key: string; label: string; scopedBy?: string }
+  // Multi-select that searches /search/suggest as the user types.
+  | { kind: 'suggest'; key: string; label: string }
   // Date range, sent as <key>_from / <key>_to.
   | { kind: 'dateRange'; key: string; label: string }
   // Min/max numbers, sent as min_<key> / max_<key>.
@@ -31,7 +30,7 @@ export const FILTER_SECTIONS: FilterSection[] = [
     hint: 'Run filters (assay type, platform to sequencing center) need one run matching them all. Sample filters (cell line to ChIP target) match when the project\'s samples include each value, not necessarily in the same sample.',
     filters: [
       { kind: 'select', key: 'supergroup', label: 'Supergroup' },
-      { kind: 'suggest', key: 'organism', label: 'Organism', scopedBy: 'supergroup' },
+      { kind: 'suggest', key: 'organism', label: 'Organism' },
       { kind: 'select', key: 'assay_type', label: 'Assay type' },
       // Sample attributes, from bioproject_attributes (the runs' jattr, summarised per project).
       { kind: 'suggest', key: 'cell_line', label: 'Cell line' },

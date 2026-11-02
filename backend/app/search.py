@@ -20,8 +20,8 @@ from collections import Counter
 from datetime import date
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import (
     Column, Date, MetaData, Table, and_, case, exists, false, func, literal_column, or_, select, text, true,
 )
@@ -504,16 +504,14 @@ CACHE_SECONDS = 3600
 _cache: dict[str, tuple[float, tuple[tuple[str, int], ...]]] = {}
 
 
-def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[str, int], ...]:
+def distinct_values(name: str) -> tuple[tuple[str, int], ...]:
     """All values of a filter field with their counts, most common first.
 
     Counts are projects for project fields, and studies (or runs, without
-    study_facets) for run fields. With a supergroup (project fields only),
-    only that supergroup's projects are counted. Results are cached for an
-    hour. Empty results are not cached, so values appear as soon as data is
-    loaded.
+    study_facets) for run fields. Results are cached for an hour. Empty
+    results are not cached, so values appear as soon as data is loaded.
     """
-    key = name if supergroup is None else f"{name}|{supergroup}"
+    key = name
     if name == "tag":
         return tuple((t, n) for t, n, _ in tag_values())
     cached = _cache.get(key)
@@ -535,10 +533,7 @@ def distinct_values(name: str, supergroup: Optional[str] = None) -> tuple[tuple[
         column, multivalue = PROJECT_FIELDS[name]
         value = func.unnest(split_values(column)) if multivalue else column
 
-    sub = select(value.label("value")).where(column.is_not(None))
-    if supergroup is not None:
-        sub = sub.where(B.supergroup == supergroup)
-    sub = sub.subquery()
+    sub = select(value.label("value")).where(column.is_not(None)).subquery()
     n = func.count().label("n")
     stmt = (
         select(sub.c.value, n)
@@ -613,13 +608,92 @@ def tag_labels() -> dict[str, Optional[str]]:
     return _tag_cache[2]
 
 
-def organisms_in(supergroups: list[str]) -> list[tuple[str, int]]:
-    """Organisms of the given supergroups with their project counts, most common first."""
-    counts: dict[str, int] = {}
-    for supergroup in supergroups:
-        for organism, n in distinct_values("organism", supergroup):
-            counts[organism] = counts.get(organism, 0) + n
-    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+# Narrowed values for recent (field, other filters) pairs; each user picking
+# filters asks for the same few repeatedly.
+NARROWED_CACHE_SIZE = 500
+NARROWED_TIMEOUT_MS = 15000
+_narrowed: dict[str, tuple[float, tuple[tuple[str, int], ...]]] = {}
+
+
+def narrowed_values(name: str, filters: SearchFilters) -> tuple[tuple[str, int], ...]:
+    """A filter field's values among the projects matching the other filters,
+    with their numbers of projects, most common first.
+
+    The field's own selection is ignored, so more of its values can still be
+    chosen. Without other filters this is distinct_values. Falls back to it,
+    unnarrowed, when narrowing isn't possible quickly: for run fields without
+    study_facets, or past NARROWED_TIMEOUT_MS.
+    """
+    others = filters.model_copy(update={name: []})
+    conditions = build_conditions(others)
+    if not conditions or (name in RUN_FIELDS and not has_study_facets()):
+        return distinct_values(name)
+    key = name + others.model_dump_json(exclude={"sort", "limit", "offset"})
+    cached = _narrowed.get(key)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+
+    where = and_(true(), *conditions)
+    project = B.bioproject.label("project")
+    # The tables read for the values are aliased: the filters' EXISTS
+    # subqueries read the same tables and must not correlate to these.
+    if name in ATTRIBUTE_FIELDS:
+        a = A.alias("values_a")
+        rows = (
+            select(a.c.value_key.label("key"), a.c.value.label("value"), project)
+            .select_from(B.__table__.join(a, and_(a.c.bioproject == B.bioproject, a.c.field == name)))
+            .where(where)
+        )
+    elif name == "tag":
+        g = G.__table__.alias("values_g")
+        value = func.unnest(tag_array(g.c.tags))
+        rows = select(value.label("key"), value.label("value"), project).join(g, g.c.bioproject == B.bioproject).where(where)
+    elif name in RUN_FIELDS:
+        f = F.alias("values_f")
+        value = func.unnest(f.c[RUN_FIELDS[name][1]])
+        rows = select(value.label("key"), value.label("value"), project).join(f, f.c.sra_study == B.sra_study).where(where)
+    else:
+        column, multivalue = PROJECT_FIELDS[name]
+        value = func.unnest(split_values(column)) if multivalue else column
+        rows = select(value.label("key"), value.label("value"), project).where(where, column.is_not(None))
+    rows = rows.subquery()
+    # A project appears once per SRA study; count each once. Case variants
+    # (attributes) count as one value, shown in the most common spelling.
+    n = func.count(func.distinct(rows.c.project)).label("n")
+    stmt = (
+        select(func.mode().within_group(rows.c.value).label("value"), n)
+        .where(rows.c.key != "")
+        .group_by(rows.c.key)
+        .order_by(n.desc(), rows.c.key)
+    )
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(f"SET LOCAL statement_timeout = {NARROWED_TIMEOUT_MS}"))
+            values = tuple((row.value, row.n) for row in conn.execute(stmt))
+    except Exception:
+        logger.exception("Could not narrow the values of %s; showing all", name)
+        return distinct_values(name)
+    if len(_narrowed) >= NARROWED_CACHE_SIZE:
+        _narrowed.clear()
+    _narrowed[key] = (time.monotonic() + CACHE_SECONDS, values)
+    return values
+
+
+def filters_from_request(request: Request, exclude: set[str]) -> SearchFilters:
+    """The search filters in a request's query string, for narrowing a filter's
+    values. Read by hand because /suggest's own parameters (q, limit) share
+    names with search parameters."""
+    data = {}
+    for name in request.query_params.keys():
+        if name in exclude or name in ("sort", "limit", "offset") or name not in SearchFilters.model_fields:
+            continue
+        values = request.query_params.getlist(name)
+        is_list = getattr(SearchFilters.model_fields[name].annotation, "__origin__", None) is list
+        data[name] = values if is_list else values[-1]
+    try:
+        return SearchFilters.model_validate(data)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors(include_url=False, include_context=False))
 
 
 def warm_cache() -> None:
@@ -641,37 +715,29 @@ def warm_cache() -> None:
             distinct_values(name)
         except Exception:
             logger.exception("Could not load filter values for %s", name)
-    try:
-        for supergroup, _ in distinct_values("supergroup"):
-            distinct_values("organism", supergroup)
-    except Exception:
-        logger.exception("Could not load organisms by supergroup")
 
 
+# Both take the other selected filters as extra query parameters (the same as
+# /search/bioprojects) and then list only values found among the projects
+# matching them, with counts of those projects.
 @router.get("/facets/{field}", response_model=list[schemas.FacetValue])
-def facet(field: Literal[tuple(FACET_FIELDS)]):  # type: ignore[valid-type]
-    return [{"value": v, "count": n} for v, n in distinct_values(field)]
+def facet(request: Request, field: Literal[tuple(FACET_FIELDS)]):  # type: ignore[valid-type]
+    values = narrowed_values(field, filters_from_request(request, {"field"}))
+    return [{"value": v, "count": n} for v, n in values]
 
 
 @router.get("/suggest", response_model=list[schemas.FacetValue])
 def suggest(
+    request: Request,
     field: Literal[tuple(SUGGEST_FIELDS)],  # type: ignore[valid-type]
     q: str = "",
     limit: int = Query(20, ge=1, le=100),
-    # Narrows organism suggestions to these supergroups; ignored for other fields.
-    supergroup: Annotated[list[str], Query()] = [],
 ):
     needle = q.strip().lower()
-    if field == "tag":
-        matches = (
-            {"value": v, "count": n, "group": label}
-            for v, n, label in tag_values()
-            if needle in v.lower()
-        )
-        return [m for _, m in zip(range(limit), matches)]
-    values = organisms_in(supergroup) if field == "organism" and supergroup else distinct_values(field)
+    values = narrowed_values(field, filters_from_request(request, {"field", "q", "limit"}))
+    labels = tag_labels() if field == "tag" else {}
     matches = (
-        {"value": v, "count": n}
+        {"value": v, "count": n, "group": labels.get(v)}
         for v, n in values
         if needle in v.lower()
     )

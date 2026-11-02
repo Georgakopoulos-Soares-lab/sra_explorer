@@ -39,13 +39,14 @@ export const api = {
     apiGet<Bioproject[]>('/search/latest', { limit }, { signal }),
 
   // Dropdown options, with counts, for one filter with a short list of values.
-  facet: (field: string, signal?: AbortSignal) =>
-    apiGet<FacetValue[]>(`/search/facets/${encodeURIComponent(field)}`, undefined, { signal }),
+  // `context` is the other selected filters (search parameters): only values
+  // found among the projects matching them are returned, with those counts.
+  facet: (field: string, context?: SearchParams, signal?: AbortSignal) =>
+    apiGet<FacetValue[]>(`/search/facets/${encodeURIComponent(field)}`, context, { signal }),
 
-  // Matching values for filters with too many values for a dropdown. `scope`
-  // adds other filters' values that narrow the results (e.g. supergroup for organism).
-  suggest: (field: string, q: string, signal?: AbortSignal, scope?: Record<string, string[]>) =>
-    apiGet<FacetValue[]>('/search/suggest', { ...scope, field, q }, { signal }),
+  // Matching values for filters with too many values for a dropdown; `context` as for facet.
+  suggest: (field: string, q: string, signal?: AbortSignal, context?: SearchParams) =>
+    apiGet<FacetValue[]>('/search/suggest', { ...context, field, q }, { signal }),
 
   // The most common tags among a search's top results; takes the search's own parameters.
   tagSummary: (params: SearchParams, signal?: AbortSignal) =>
