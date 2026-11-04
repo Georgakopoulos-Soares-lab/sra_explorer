@@ -136,6 +136,8 @@ As a batch job: `sbatch run_extract_tags.slurm`. Set your allocation in its `#SB
 
 ### Updating with new BioProjects
 
+On the production host this happens every week without running anything: the update pipeline tags the new and text-changed projects and up to 20,000 untagged old ones per run, straight from the database ([auto-update.md](auto-update.md#tags)). The rest of this section is for running the script by hand on the TSV files.
+
 Run the same command again. Projects already in `bioproject_tags.tsv` are skipped and only new ones are added, so an update with a few thousand new projects takes minutes.
 
 The same mechanism resumes a run that was stopped or killed: rerun the command and it continues where it stopped.

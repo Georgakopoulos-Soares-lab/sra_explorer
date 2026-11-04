@@ -79,6 +79,8 @@ cd backend && .venv/bin/python -m app.normalize apply     # applies the rules; r
 
 If a view is created after the apply, it is built from the already normalised data. If it existed before, the apply refreshes it. The full reload order is in [production.md](production.md#reloading-data).
 
+The weekly update pipeline on the production host ([auto-update.md](auto-update.md)) doesn't drop tables: it inserts and updates rows, then runs `normalize apply` itself in its refresh step, so the renames are back before the site sees the new data. It also never overwrites the three `bioprojects` columns the page renames (Organism, Supergroup, Country) on existing rows; the recomputed attribute lists do come back in their original spelling and are renamed again by the rules each week.
+
 `jattr_normalize.py --reclean` and the pipeline's own cleaning ([jattr-normalization.md](jattr-normalization.md)) still run first and fix what they fix; the rules then apply on top. A rule for a value the pipeline no longer produces simply changes nothing.
 
 ## Notes

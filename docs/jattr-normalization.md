@@ -202,6 +202,8 @@ Create it after loading `bioproject_attributes`, and refresh it after loading ne
 
 ## Running it again
 
+On the production host the weekly update pipeline recomputes `bioproject_attributes` and the coverage table every Sunday from the parquet snapshot's `jattr` column, with this script's own field list and cleaning functions, and upserts the result ([auto-update.md](auto-update.md#attributes)). The steps below are for running the script by hand on the TSV export.
+
 Both scripts read `Automations/output/sra_metadata_all.tsv` by default and need nothing but Python 3 (no packages). They are CPU-bound and use every core by default (`--workers`). On the 16-core VM the survey takes about 20 minutes and the pipeline about 25 minutes for the 98 GB file; the pipeline's main process needs about 1.5 GB of RAM, the workers much less.
 
 After `sra_metadata_all.tsv` has been refreshed:
