@@ -202,6 +202,12 @@ def run(ctx: common.Context) -> dict:
     result["upserted"] = upsert(ctx, out_path)
     ctx.log.info("upserted %d embeddings", result["upserted"])
     # Only now is the work consumed: a crash above reruns from the checkpoint.
+    # Under --limit the queue keeps what this run left out.
+    done = {t["bioproject"] for t in targets}
+    leftover = [p for p in pending if p not in done]
     ctx.pending_clear("reembed")
+    if leftover:
+        ctx.pending_add("reembed", leftover)
+        ctx.log.info("%d queued projects left for the next run (--limit)", len(leftover))
     remove_work_files()
     return result

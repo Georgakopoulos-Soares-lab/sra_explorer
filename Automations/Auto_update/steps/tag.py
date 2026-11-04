@@ -248,6 +248,12 @@ def run(ctx: common.Context) -> dict:
     result["upserted"] = upsert(ctx, out_path)
     ctx.log.info("upserted %d tag rows", result["upserted"])
     # Only now is the work consumed: a crash above reruns from the output file.
+    # Under --limit the queue keeps what this run left out.
+    done = set(targets)
+    leftover = [p for p in pending if p not in done]
     ctx.pending_clear("retag")
+    if leftover:
+        ctx.pending_add("retag", leftover)
+        ctx.log.info("%d queued projects left for the next run (--limit)", len(leftover))
     remove_work_files()
     return result

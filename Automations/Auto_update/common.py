@@ -126,7 +126,7 @@ class Config:
     restart_api: bool = True    # systemctl restart srascout-api at the end
     api_service: str = "srascout-api"
     hf_home: str = "/root/.cache/huggingface"
-    download_concurrency: int = 4
+    download_concurrency: int = 6   # parquet files fetched at once (one stream is slow here; files scale ~linearly)
 
     @classmethod
     def load(cls) -> "Config":
@@ -158,7 +158,7 @@ class Config:
             restart_api=flag("AUTO_UPDATE_RESTART_API", True),
             api_service=_env("AUTO_UPDATE_API_SERVICE", "srascout-api", files),
             hf_home=_env("HF_HOME", "/root/.cache/huggingface", files),
-            download_concurrency=num("AUTO_UPDATE_DOWNLOAD_CONCURRENCY", 4),
+            download_concurrency=num("AUTO_UPDATE_DOWNLOAD_CONCURRENCY", 6),
         )
 
     @property

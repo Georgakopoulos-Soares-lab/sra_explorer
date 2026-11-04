@@ -232,6 +232,69 @@ def stage_tsv(conn, dry_run: bool) -> int:
     return common.scalar(conn, f"SELECT count(*) FROM {STAGING}")
 
 
+# The fields whose values the normalisation page renames (backend/app/normalize.py
+# FIELDS of kind "attribute"); a tissue rule also applies to the source_name
+# list, which stands in for the tissue of projects without one (its "also").
+RULE_FIELDS = {
+    "cell_line": [], "cell_type": [], "tissue": ["source_name"], "sex": [], "disease_state": [],
+    "genotype_or_strain": [], "treatment_or_growth_condition": [], "molecular_target": [],
+}
+
+
+def apply_rules(ctx: common.Context, conn) -> int:
+    """Applies the recorded normalisation rules to the staged records, so the
+    upsert only touches projects that really changed.
+
+    The pipeline rebuilds every record from the raw jattr values, so without
+    this the ~150k projects a rule touches (tissue capitalised, "Liver" ->
+    "liver", ...) would look changed every week, be rewritten, and then be
+    renamed again by `normalize apply` in the refresh step. The rewrite is
+    the one backend/app/normalize._rewrite_list does on bioproject_attributes:
+    each list element e of the field is rewritten, the list keeps its order and
+    loses duplicates the rewrite creates, in id (creation) order of the rules.
+    `normalize apply` still runs afterwards as the safety net. Returns the
+    number of rule applications that changed a staged row.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, field, action, from_value, to_value FROM value_normalizations"
+                    " WHERE field = ANY(%s) ORDER BY id", (list(RULE_FIELDS),))
+        rules = cur.fetchall()
+    changed = 0
+    with conn.cursor() as cur:
+        for rule_id, field, action, from_value, to_value in rules:
+            if action == "rename":
+                new_value = "CASE WHEN e = %(from)s THEN %(to)s ELSE e END"
+                needs_change = "jsonb_exists(a.attributes -> %(field)s, %(from)s)"
+            elif action == "capitalize":
+                new_value = "upper(left(e, 1)) || substr(e, 2)"
+                needs_change = ("EXISTS (SELECT 1 FROM jsonb_array_elements_text(a.attributes -> %(field)s) AS l(e)"
+                                " WHERE left(e, 1) <> upper(left(e, 1)))")
+            else:
+                ctx.log.warning("rule %s: unknown action %r skipped", rule_id, action)
+                continue
+            for key in [field, *RULE_FIELDS[field]]:
+                cur.execute(f"""
+                    UPDATE {STAGING} a
+                    SET attributes = jsonb_set(a.attributes, ARRAY[%(field)s], (
+                        SELECT coalesce(jsonb_agg(x ORDER BY first_ord), '[]'::jsonb)
+                        FROM (
+                            SELECT x, min(ord) AS first_ord
+                            FROM (
+                                SELECT {new_value} AS x, ord
+                                FROM jsonb_array_elements_text(a.attributes -> %(field)s) WITH ORDINALITY AS t(e, ord)
+                            ) rewritten
+                            GROUP BY x
+                        ) deduped
+                    ))
+                    WHERE jsonb_typeof(a.attributes -> %(field)s) = 'array'
+                      AND {needs_change}
+                """, {"field": key, "from": from_value, "to": to_value})
+                changed += cur.rowcount
+    ctx.log.info("attributes: %d normalisation rules applied to the staged records (%s row changes)",
+                 len(rules), f"{changed:,}")
+    return changed
+
+
 def load(ctx: common.Context, projects: int, coverage: list[tuple]) -> tuple[int, int]:
     """Upserts the TSVs into the two tables in one transaction. Returns (inserted, updated)."""
     dry = ctx.options.dry_run
@@ -247,6 +310,8 @@ def load(ctx: common.Context, projects: int, coverage: list[tuple]) -> tuple[int
         staged = stage_tsv(conn, dry)
         if staged != projects:
             raise RuntimeError(f"staging holds {staged} rows, expected {projects}")
+        if common.relation_exists(conn, "value_normalizations"):
+            apply_rules(ctx, conn)
         with conn.cursor() as cur:
             cur.execute(PREVIEW_ATTRIBUTES)
             to_insert, to_update = cur.fetchone()
@@ -268,6 +333,11 @@ def run(ctx: common.Context) -> dict:
     files = ctx.parquet_files()
     if not files:
         raise FileNotFoundError(f"no parquet files in {ctx.snapshot_dir()}")
+    if ctx.options.files is not None and not ctx.options.dry_run:
+        # Every project is recomputed from what is read: a partial snapshot
+        # would replace real records with ones built from a fraction of their
+        # runs (n_runs, value lists) and the upsert would write them.
+        raise RuntimeError("attributes: --files reads a partial snapshot, which may only be loaded with --dry-run")
     if ctx.options.limit is not None:
         ctx.log.info("attributes: --limit is ignored (every project is recomputed)")
 

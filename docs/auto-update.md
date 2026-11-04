@@ -39,8 +39,8 @@ Each step is a module in `steps/` with a `run(ctx)` function that returns the co
 
 ### `download`
 
-1. **The SRA snapshot.** The bucket holds a full daily copy of SRA's run metadata as about 30 parquet objects (13 GB, ~44.6 million rows), all named after the snapshot date (`20261104_...`). The step downloads the objects whose local file is missing or has another size, four at a time, each to `<name>.parquet.part` and then renamed, with three attempts per file. When every file has the listed size it writes the `COMPLETE` marker (the object list, sizes and a timestamp) into the snapshot folder. A folder with a matching marker is skipped ("already complete"). If the bucket can't be listed but a complete snapshot exists locally, the run continues with that one and logs a warning.
-2. **`bioproject.xml`** (4.2 GB) through `Automations/ENA/get_ENA_xml.sh`, which uses `wget -N`: an unchanged file is not downloaded again, and a dropped connection resumes. The file must end up over 1 GB and end with `</PackageSet>`; if the download fails but the previous complete file is still there, the run continues with it.
+1. **The SRA snapshot.** The bucket holds a full daily copy of SRA's run metadata as about 30 parquet objects (13 GB, ~44.6 million rows), all named after the snapshot date (`20261104_...`). The step downloads the objects whose local file is missing or has another size, six at a time (one stream alone gets only a few MB/s here; parallel files add up), each to `<name>.parquet.part` and then renamed, with three attempts per file. When every file has the listed size it writes the `COMPLETE` marker (the object list, sizes and a timestamp) into the snapshot folder. A folder with a matching marker is skipped ("already complete"). If the bucket can't be listed but a complete snapshot exists locally, the run continues with that one and logs a warning.
+2. **`bioproject.xml`** (4.2 GB) through `Automations/ENA/get_ENA_xml.sh`, which uses `wget -N`: an unchanged file is not downloaded again. A partial file is never resumed: NCBI rewrites the dump every day, and resuming could join the halves of two different dumps into a file that still looks complete, so the script deletes any file that doesn't end with `</PackageSet>` and fetches the dump whole again (`wget` retries a dropped connection within the run). The file must end up over 1 GB and end with `</PackageSet>`; if the download fails but the previous complete file is still there, the run continues with it.
 
 Result: `snapshot`, `parquet_files`, `downloaded`, `xml_bytes`, `xml_mtime`.
 
@@ -48,7 +48,7 @@ Result: `snapshot`, `parquet_files`, `downloaded`, `xml_bytes`, `xml_mtime`.
 
 New SRA runs into `sra_metadata`. The snapshot has no usable "modified since" column, so the step reads the whole snapshot each week and keeps the rows whose `acc` is not in the table:
 
-1. All accessions already in the table (42.5 million) are read once with `COPY` into a sorted array (about 0.5 GB).
+1. All accessions already in the table (42.5 million) are read once with `COPY` into a sorted array (about 0.5 GB). Only values shaped like a run accession (`SRR`/`ERR`/`DRR` + digits) count, on both sides: the table holds a few garbage rows from the original TSV load, and the snapshot has rows without an accession.
 2. The parquet files are streamed 200,000 rows at a time, reading only the table's 17 columns. Rows with an unseen accession are cleaned like the original load (tabs and newlines become spaces; `releasedate` stays a date) and copied into an unlogged staging table.
 3. `INSERT INTO sra_metadata ... ON CONFLICT (acc) DO NOTHING` moves them over, in one transaction with the staging table's drop. The primary key is what rules out duplicates, so the lookup only keeps the staging table small.
 
@@ -58,7 +58,7 @@ Rows already in the table are never changed ([Limitations](#limitations)). Resul
 
 `bioproject_attributes` (the sample filters: tissue, sex, cell line, ...) and `bioproject_attributes_coverage` (the home page's "samples with a tissue recorded" counts), recomputed from the snapshot's `jattr` column. A project's record changes whenever a run is added to it, so the step rebuilds every project rather than patching the new runs in. It is the same computation as `Automations/jattr_normalize.py` ([jattr-normalization.md](jattr-normalization.md)), importing that script's field list and cleaning functions, but reading the parquet files instead of the TSV export: one worker process per parquet row group, four at a time, merged in a fixed order so the output doesn't depend on which worker finished first.
 
-It writes `data/output/bioproject_attributes.tsv` and `bioproject_attributes_coverage.tsv` in the format the schema files in `Automations/output/` load, then upserts them: new projects are inserted, projects whose JSON changed are updated (an unchanged record is left alone, so `updated` is the real number of changes), and the 14 coverage rows are updated in place. Result: `rows`, `parse_errors`, `rows_without_bioproject`, `projects`, `inserted`, `updated`.
+It writes `data/output/bioproject_attributes.tsv` and `bioproject_attributes_coverage.tsv` in the format the schema files in `Automations/output/` load, then upserts them. Before the comparison, the rules recorded on the normalisation page for the sample attribute fields are applied to the staged records (the same rewrite `normalize apply` does, in the order the rules were made; a tissue rule also covers `source_name`): the pipeline rebuilds every record from the raw values, so without this the 150,000 projects the tissue rules touch would look changed every week. Then new projects are inserted, projects whose JSON changed are updated (an unchanged record is left alone, so `updated` is the real number of changes), and the 14 coverage rows are updated in place. With `--files` this step only accepts `--dry-run`: a partial snapshot would replace real records with ones built from a fraction of their runs. Result: `rows`, `parse_errors`, `rows_without_bioproject`, `projects`, `inserted`, `updated`.
 
 ### `projects`
 
@@ -142,8 +142,8 @@ cd /root/sra_explorer/Automations/Auto_update
 | `--from STEP` | that step and all the following ones (how a failed run is resumed) |
 | `--only STEP` | a single step |
 | `--dry-run` | every step reads and computes, but writes nothing to the database: downloads are listed, not made; `normalize apply`, the view refreshes, the embedding and tag scripts and the API restart are skipped; the log says what would be written |
-| `--limit N` | at most N new runs (runs step), new pairs (projects step), projects (embeddings and tags steps). For testing |
-| `--files N` | only the first N parquet files of the snapshot, for the runs and attributes steps. For testing |
+| `--limit N` | at most N new runs (runs step), new pairs (projects step), projects (embeddings and tags steps; what the queue holds beyond the limit stays queued). For testing |
+| `--files N` | only the first N parquet files of the snapshot, for the runs and attributes steps (attributes then needs `--dry-run`). For testing |
 | `--snapshot NAME` | use `data/sra_metadata/NAME` instead of the newest complete snapshot (the download step then keeps it even if the bucket holds a newer one) |
 | `--list` | print the steps and the selection, then exit |
 
@@ -187,7 +187,7 @@ Settings come from the environment first, then `Automations/Auto_update/.env` (o
 | `AUTO_UPDATE_KEEP_SNAPSHOTS` | 1 | Complete snapshots kept on disk after a run (13 GB each) |
 | `AUTO_UPDATE_RESTART_API` | true | Restart the API at the end |
 | `AUTO_UPDATE_API_SERVICE` | `srascout-api` | The systemd service to restart |
-| `AUTO_UPDATE_DOWNLOAD_CONCURRENCY` | 4 | Parquet files downloaded at once |
+| `AUTO_UPDATE_DOWNLOAD_CONCURRENCY` | 6 | Parquet files downloaded at once |
 | `HF_HOME` | `/root/.cache/huggingface` | Model cache for the embedding and tag scripts (shared with the API) |
 
 Example `Automations/Auto_update/.env`:
@@ -240,7 +240,7 @@ What resuming looks like per step:
 
 | Step | After a crash |
 | --- | --- |
-| `download` | finished files are kept, `.part` files are discarded, only the missing files are fetched; `wget` continues the XML |
+| `download` | finished parquet files are kept, `.part` files are discarded, only the missing files are fetched; an incomplete `bioproject.xml` is deleted and downloaded again whole |
 | `runs`, `attributes`, `projects` | nothing was committed; the rerun repeats the step from the start (the same input gives the same result) |
 | `refresh` | repeats; every part is idempotent |
 | `embeddings` | the script's checkpoint is honoured: when `work/embed_input.csv` and its progress file still cover the same targets, embedding continues where it stopped |
@@ -254,7 +254,7 @@ Rerunning the whole pipeline instead of `--from` is also safe, only slower: each
 - **`another update is running (pid ...)`, exit code 3.** The lock in `state/update.lock` is held by a live process (a timer run, or one started by hand). Wait for it, or `systemctl stop srascout-update.service`. The lock is released by the kernel when the process dies, so a crashed run never leaves it stale.
 - **`no complete snapshot under data/sra_metadata`** from a step other than `download`: the download didn't finish (no `COMPLETE` marker). Run `update.py --only download`, or point at a folder with `--snapshot NAME` for a test. A folder without the marker is never picked up automatically.
 - **`parquet files have the wrong size after downloading`**: an object changed under the download (every object in the bucket is replaced each day, and a run that overlaps the replacement can see two days). Rerun the download step; it fetches only the files that differ.
-- **`bioproject.xml is missing, smaller than 1 GB or truncated`**: the FTP download was interrupted and no previous complete file exists. Rerun `--from download` (`wget --continue` resumes a partial file of the same dump; the script discards a partial file older than 12 hours, so two dumps never get mixed).
+- **`bioproject.xml is missing, smaller than 1 GB or truncated`**: the FTP download was interrupted and no previous complete file exists. Rerun `--from download`: the script deletes the incomplete file and downloads the dump again from the start (a partial file is never resumed, so two daily dumps never get mixed).
 - **The tags step dies without a Python error** (a worker was killed): out of memory. Set `AUTO_UPDATE_TAG_WORKERS=1` in `.env` and rerun `--from tags`; the finished part of the output is kept.
 - **`normalize apply` failed** in the refresh step: see the lines prefixed `|` in the log (the backend's own output); it fails only when a view can't be refreshed. Fix and rerun `--from refresh`.
 - **Only some of the week's work is wanted**, for example tags after a config change: `--only tags`. The pending queues are consumed by the step that handles them whichever way it was started.

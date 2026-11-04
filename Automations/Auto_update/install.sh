@@ -40,7 +40,7 @@ fi
 say "TagWords venv (extract_tags.py): $AUTOMATIONS/TagWords/.venv"
 if make_venv "$AUTOMATIONS/TagWords"; then
     "$AUTOMATIONS/TagWords/.venv/bin/pip" install torch --index-url "$TORCH_INDEX"
-    "$AUTOMATIONS/TagWords/.venv/bin/pip" install gliner sentence-transformers numpy
+    "$AUTOMATIONS/TagWords/.venv/bin/pip" install -r "$AUTOMATIONS/TagWords/requirements.txt"
 fi
 
 say "folders and smoke test"
