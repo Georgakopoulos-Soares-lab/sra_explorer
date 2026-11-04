@@ -506,6 +506,9 @@ FACET_FIELDS.append("sex")
 SUGGEST_FIELDS += [name for name in ATTRIBUTE_FIELDS if name != "sex"]
 
 CACHE_SECONDS = 3600
+# The home page counts only change when new data is loaded (weekly), and the
+# admin pages clear the cache after their own changes, so keep them for a week.
+STATS_CACHE_SECONDS = 7 * 24 * 3600
 _cache: dict[str, tuple[float, tuple[tuple[str, int], ...]]] = {}
 
 
@@ -772,15 +775,16 @@ def suggest(
 
 @router.get("/stats", response_model=schemas.Stats)
 def stats(db: Session = Depends(get_db)):
-    """Counts for the home page. Cached for an hour (and computed at startup),
-    since the distinct counts take a few seconds."""
+    """Counts for the home page. Cached for a week (and computed at startup),
+    since the distinct counts take several seconds. The cache is cleared when
+    the admin pages change data; restart the API after loading new data."""
     global _stats_cache
     if _stats_cache[0] > time.monotonic():
         return _stats_cache[1]
     values = compute_stats(db)
     # Numbers missing because a table isn't loaded yet are checked again after
     # a minute, so they appear soon after it is.
-    ttl = CACHE_SECONDS if None not in values.values() else 60
+    ttl = STATS_CACHE_SECONDS if None not in values.values() else 60
     _stats_cache = (time.monotonic() + ttl, values)
     return values
 

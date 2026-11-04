@@ -1,9 +1,9 @@
 """Database statistics for the statistics page (/statistics).
 
-Everything is computed in one go and cached for a day. Counting runs per
+Everything is computed in one go and cached for a week. Counting runs per
 year, assay type, platform and library source reads all of sra_metadata
 (about 40 s on 42 million runs), so the numbers are computed at startup in
-the background, and refreshed in the background once they are a day old:
+the background, and refreshed in the background once they are a week old:
 requests get the cached numbers meanwhile and only the very first request,
 before the startup computation is done, waits for it.
 
@@ -32,7 +32,9 @@ from .database import engine
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 logger = logging.getLogger(__name__)
 
-CACHE_SECONDS = 24 * 3600
+# The data is loaded weekly, and the admin pages mark the cache stale after
+# their own changes (mark_stale), so a week.
+CACHE_SECONDS = 7 * 24 * 3600
 # Values listed per dimension, most common first; the rest are only counted in totals.
 TOP_VALUES = 40
 # Values with a count per year, for the charts over time.
