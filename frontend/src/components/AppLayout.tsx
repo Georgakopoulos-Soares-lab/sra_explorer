@@ -8,7 +8,11 @@ const NAV = [
   { key: '/tags', label: <Link to="/tags">Tag explorer</Link> },
   { key: '/statistics', label: <Link to="/statistics">Statistics</Link> },
   { key: '/docs/api', label: <Link to="/docs/api">API</Link> },
+  { key: '/help', label: <Link to="/help">Help</Link> },
 ]
+
+// Kept apart at the far right: the admin page, not part of the public site.
+const ADMIN_NAV = [{ key: '/admin/normalize', label: <Link to="/admin/normalize">Normalization</Link> }]
 
 export default function AppLayout() {
   const { pathname } = useLocation()
@@ -27,6 +31,8 @@ export default function AppLayout() {
           items={NAV}
           className="min-w-0 flex-1"
         />
+        {/* Hidden on phones, where the header has no room for it. */}
+        <Menu theme="dark" mode="horizontal" selectedKeys={[pathname]} items={ADMIN_NAV} className="!hidden shrink-0 md:!flex" />
       </Layout.Header>
 
       <Layout.Content>
