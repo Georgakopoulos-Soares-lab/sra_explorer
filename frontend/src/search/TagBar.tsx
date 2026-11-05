@@ -35,7 +35,7 @@ export default function TagBar({ selected, matchAny = false, params, suggest, on
   if (selected.length === 0 && suggestions.length === 0) return null
 
   return (
-    <div className="mb-2 flex items-start gap-2 text-xs">
+    <div className="mb-2 flex items-start gap-2 pl-6 text-xs">
       <span className="w-12 shrink-0 pt-1 text-sm text-gray-500">Tags</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 pt-0.5">
         {selected.length > 1 && (
@@ -44,12 +44,12 @@ export default function TagBar({ selected, matchAny = false, params, suggest, on
           </span>
         )}
         {selected.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1 rounded bg-blue-100 py-0.5 pl-2 pr-1 text-blue-700">
+          <span key={t} className="inline-flex items-center gap-1 rounded border border-solid border-sky-200 bg-sky-50 py-0.5 pl-2 pr-1 text-sky-800">
             {t}
             <button
               type="button"
               aria-label={`Remove tag ${t}`}
-              className="flex cursor-pointer border-0 bg-transparent p-0 text-blue-400 hover:text-blue-700"
+              className="flex cursor-pointer border-0 bg-transparent p-0 text-sky-400 hover:text-sky-700"
               onClick={() => onRemove(t)}
             >
               <CloseOutlined className="text-[10px]" />
@@ -70,12 +70,12 @@ export default function TagBar({ selected, matchAny = false, params, suggest, on
             key={t.value}
             type="button"
             title={[t.group, `${t.count.toLocaleString()} of the top results`].filter(Boolean).join(' · ')}
-            className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-gray-300 bg-white px-1.5 py-px text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600"
+            className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-sky-300 bg-sky-50 px-1.5 py-px text-xs text-sky-800 hover:border-sky-500 hover:bg-sky-100"
             onClick={() => onAdd(t.value)}
           >
             <PlusOutlined className="text-[9px]" />
             {t.value}
-            <span className="text-gray-400">{t.count.toLocaleString()}</span>
+            <span className="text-sky-500">{t.count.toLocaleString()}</span>
           </button>
         ))}
       </div>

@@ -236,3 +236,16 @@ class SearchSummary(BaseModel):
     # Projects per release year.
     years: list[YearCount]
     dimensions: list[SummaryDimension]
+
+
+class ResolvedPublication(BaseModel):
+    """A DOI or PubMed ID from the search box, resolved to the paper searched for."""
+
+    kind: str  # "doi" or "pmid": what was typed
+    id: str
+    title: str
+    abstract: str
+    pmid: Optional[str] = None
+    doi: Optional[str] = None
+    url: str
+    source: str  # "pubmed" or "crossref"

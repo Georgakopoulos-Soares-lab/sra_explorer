@@ -29,7 +29,7 @@ export const FILTER_SECTIONS: FilterSection[] = [
     // Kept as 'organism' so the panel still opens on it.
     key: 'organism',
     title: 'Organism, samples and sequencing',
-    hint: 'Sequencing filters (assay type, instrument, library, center) must all match the same run. Sample filters (cell line to ChIP target) can match different samples.',
+    hint: 'Sequencing filters (assay type, instrument, library, and Sequencing center under Submitter) must all match the same run. Sample filters (cell line to ChIP target) can match different samples.',
     filters: [
       { kind: 'select', key: 'supergroup', label: 'Supergroup' },
       { kind: 'suggest', key: 'organism', label: 'Organism' },
@@ -47,9 +47,8 @@ export const FILTER_SECTIONS: FilterSection[] = [
       { kind: 'select', key: 'instrument', label: 'Instrument' },
       { kind: 'select', key: 'librarylayout', label: 'Library layout' },
       { kind: 'select', key: 'libraryselection', label: 'Library selection' },
-      { kind: 'suggest', key: 'center_name', label: 'Sequencing center' },
       // Same date as the results table's Released column.
-      { kind: 'dateRange', key: 'release', label: 'Released' },
+      { kind: 'dateRange', key: 'release', label: 'Release date' },
     ],
   },
   {
@@ -66,6 +65,9 @@ export const FILTER_SECTIONS: FilterSection[] = [
     title: 'Submitter, size and publications',
     filters: [
       { kind: 'suggest', key: 'organization', label: 'Organization' },
+      // A run filter (study_facets), so it must match the same run as the
+      // sequencing filters in the first section (see that section's hint).
+      { kind: 'suggest', key: 'center_name', label: 'Sequencing center' },
       { kind: 'select', key: 'organization_country', label: 'Country' },
       { kind: 'numberRange', key: 'experiments', label: 'Number of experiments' },
       { kind: 'flag', key: 'has_publications', label: 'Has publications' },

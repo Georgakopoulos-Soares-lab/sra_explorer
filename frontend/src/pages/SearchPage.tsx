@@ -2,7 +2,7 @@ import { CloudDownloadOutlined, ExportOutlined, FileTextOutlined, FilterOutlined
 import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Spin, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType, TableProps } from 'antd'
 import { useEffect, useState } from 'react'
-import { api, type Bioproject, type SearchHit, type SearchResults } from '../api'
+import { api, type Bioproject, type ResolvedPublication, type SearchHit, type SearchResults } from '../api'
 import ExternalLink from '../components/ExternalLink'
 import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
@@ -10,23 +10,23 @@ import DetailSection from '../search/DetailSection'
 import FilterPanel from '../search/FilterPanel'
 import Publications from '../search/Publications'
 import ResultsSummary from '../search/ResultsSummary'
+import SearchModes from '../search/SearchModes'
 import SimilarProjects from '../search/SimilarProjects'
 import TagBar from '../search/TagBar'
 import TagList from '../search/TagList'
 import { projectPublications } from '../search/parsePublications'
-import { RELEVANCE_SORT, type SortKey } from '../search/filters'
+import { type SortKey } from '../search/filters'
+import { parseReference, referenceLabel } from '../search/reference'
 import {
   applyUpdate,
   filtersKey,
   PAGE_SIZES,
   useSearchState,
-  type FilterValues,
   type ParamUpdate,
 } from '../search/useSearchState'
 
 const NCBI = 'https://www.ncbi.nlm.nih.gov'
 const ENA = 'https://www.ebi.ac.uk/ena/browser/view'
-const LATEST_COUNT = 100
 // Shown under the search box; clicking it runs this search.
 const EXAMPLE_QUERY = 'RNA-seq of breast cancer tumors treated with tamoxifen'
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
@@ -165,22 +165,16 @@ export default function SearchPage() {
   const { apiParams, values: applied, query: appliedQuery } = state
   const isDesktop = Grid.useBreakpoint().lg ?? true
 
-  // Filter edits go into a draft and only reach the URL (and the backend) when
-  // Search or Apply filters is clicked. The draft resets whenever the applied
-  // search changes from outside, e.g. with the back button.
+  // Filter changes apply at once. The text box keeps a draft that only runs
+  // when Search is clicked; it resets whenever the applied search changes from
+  // outside, e.g. with the back button.
   const appliedKey = filtersKey(applied) + appliedQuery
-  const [draft, setDraft] = useState<FilterValues>(applied)
   const [queryDraft, setQueryDraft] = useState(appliedQuery)
   const [draftFor, setDraftFor] = useState(appliedKey)
   if (draftFor !== appliedKey) {
     setDraftFor(appliedKey)
-    setDraft(applied)
     setQueryDraft(appliedQuery)
   }
-  // The sidebar's Apply filters button applies the filter draft only; the
-  // Search button next to the text box applies both the text and the draft.
-  // Each has its own pending flag.
-  const filtersDirty = filtersKey(draft) !== filtersKey(applied)
   const queryDirty = queryDraft.trim() !== appliedQuery
 
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -188,29 +182,45 @@ export default function SearchPage() {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
 
-  // With no filters applied, the page shows the latest projects instead of
-  // searching the whole table, and pages and sorts nothing on the server.
-  const showLatest = Object.keys(applied).length === 0 && !state.accessions && !state.semanticQuery
+  // Until the user searches (text, accessions or filters), the page shows no
+  // results and sends no request.
+  const noSearch = Object.keys(applied).length === 0 && !state.accessions && !state.semanticQuery
   const hasFilters = Object.keys(applied).length > 0
 
   // The latest response, tagged with the request it answers, so a stale
   // response never shows as current.
-  const requestKey = showLatest ? 'latest' : JSON.stringify(apiParams)
+  const requestKey = noSearch ? '' : JSON.stringify(apiParams)
   const [response, setResponse] = useState<{ key: string; error?: string }>()
   const [results, setResults] = useState<SearchResults | null>(null)
-  const loading = response?.key !== requestKey
+  const loading = !noSearch && response?.key !== requestKey
   const error = loading ? null : (response?.error ?? null)
-  // Only real searches with results are summarised, not the latest-projects list.
-  const canSummarise = !showLatest && !error && (loading || (results?.total ?? 0) > 0)
+  const canSummarise = !noSearch && !error && (loading || (results?.total ?? 0) > 0)
+
+  // A DOI or PubMed ID is searched as the paper's title and abstract (the
+  // backend resolves it); the page looks the paper up too, to show its title.
+  const reference = state.semanticQuery ? parseReference(state.semanticQuery) : null
+  const [publication, setPublication] = useState<{ key: string; pub?: ResolvedPublication }>()
+  useEffect(() => {
+    const key = state.semanticQuery
+    if (!key || !parseReference(key)) return
+    const controller = new AbortController()
+    api
+      .resolvePublication(key, controller.signal)
+      .then((pub) => setPublication({ key, pub }))
+      .catch(() => {
+        if (!controller.signal.aborted) setPublication({ key }) // the search's own error is shown
+      })
+    return () => controller.abort()
+  }, [state.semanticQuery])
+  const resolved = reference && publication?.key === state.semanticQuery ? publication.pub : undefined
+  const resolving = !!reference && publication?.key !== state.semanticQuery
 
   useEffect(() => {
-    const controller = new AbortController()
     const key = requestKey
-    const request: Promise<SearchResults> =
-      key === 'latest'
-        ? api.latestBioprojects(LATEST_COUNT, controller.signal).then((items) => ({ total: items.length, items }))
-        : api.searchBioprojects(JSON.parse(key), controller.signal)
-    request
+    if (!key) return
+    const controller = new AbortController()
+    api
+      .searchBioprojects(JSON.parse(key), controller.signal)
       .then((data) => {
         setResults(data)
         setResponse({ key })
@@ -221,32 +231,16 @@ export default function SearchPage() {
     return () => controller.abort()
   }, [requestKey])
 
-  // The text box's Search: runs the typed text and applies any pending
-  // filter edits from the sidebar at the same time.
+  // The text box's Search: runs the typed text with the current filters.
   const runSearch = (query = queryDraft) => {
     setQueryDraft(query)
-    state.apply(draft, query)
+    state.apply(applied, query)
   }
 
-  // The sidebar's Apply filters: applies the filter draft and keeps the text
-  // search that is already running (the text box may hold unapplied text).
-  const applyFilters = () => {
-    state.apply(draft, appliedQuery)
-    setDrawerOpen(false)
-  }
-
-  // Reset clears the filters only; a text search stays.
-  const reset = () => {
-    setDraft({})
-    state.apply({}, appliedQuery)
-    setDrawerOpen(false)
-  }
-
-  // Removing a chip or clicking a tag applies at once, and keeps any other
-  // unapplied edits.
+  // Any filter change (sidebar, chip, tag) applies at once and keeps the
+  // text search that is already running (the text box may hold unapplied text).
   const applyNow = (update: ParamUpdate, query = appliedQuery) => {
     const next = applyUpdate(applied, update)
-    setDraft((d) => applyUpdate(d, update))
     if (query !== appliedQuery) setQueryDraft(query)
     setDraftFor(filtersKey(next) + query)
     state.apply(next, query)
@@ -270,21 +264,17 @@ export default function SearchPage() {
       state.accessions ? '' : appliedQuery,
     )
 
-  // The latest list has no server-side sorting, so its columns aren't sortable.
-  const sortable = (key: SortKey) =>
-    showLatest
-      ? { key }
-      : {
-          key,
-          sorter: true,
-          sortOrder:
-            state.sort === `${key}_asc`
-              ? ('ascend' as const)
-              : state.sort === `${key}_desc`
-                ? ('descend' as const)
-                : null,
-          sortDirections: ['descend' as const, 'ascend' as const],
-        }
+  const sortable = (key: SortKey) => ({
+    key,
+    sorter: true,
+    sortOrder:
+      state.sort === `${key}_asc`
+        ? ('ascend' as const)
+        : state.sort === `${key}_desc`
+          ? ('descend' as const)
+          : null,
+    sortDirections: ['descend' as const, 'ascend' as const],
+  })
 
   const columns: TableColumnsType<SearchHit> = [
     {
@@ -365,34 +355,31 @@ export default function SearchPage() {
 
   // Nothing is shown under the spinner until the first response arrives.
   const emptyText = loading
-    ? ' '
+    ? <div className="h-24" />
     : error
       ? 'Search failed'
       : state.accessions
         ? `No project in the database has the accession ${state.accessions.join(', ')}`
         : state.semanticQuery
           ? `No projects are similar enough to “${state.semanticQuery}”${hasFilters ? ' and match these filters' : ''}. Try describing the data differently.`
-          : !showLatest
-          ? 'No projects match these filters'
-          : 'The database has no projects yet. Load data with the scripts in Automations/ (see docs/running.md).'
+          : 'No projects match these filters'
 
-  const panelFooter = (
-    <div className="flex flex-col gap-2">
-      {filtersDirty && (
-        <Typography.Text type="warning" className="text-xs">
-          Filter changes aren't applied yet. Click Apply filters or Search.
-        </Typography.Text>
-      )}
-      <div className="flex gap-2">
-        <Button type="primary" icon={<FilterOutlined />} onClick={applyFilters} block>
-          Apply filters
-        </Button>
-        <Button onClick={reset}>Reset</Button>
-      </div>
-    </div>
+  const activeFilters = (stacked: boolean) => (
+    <ActiveFilters
+      values={applied}
+      accessions={state.accessions ?? []}
+      stacked={stacked}
+      onChange={applyNow}
+      onRemoveAccession={(acc) => {
+        const rest = state.accessions!.filter((a) => a !== acc).join(' ')
+        setQueryDraft(rest)
+        state.update({ q: rest || null })
+      }}
+      onClear={clearFilters}
+    />
   )
 
-  const panel = <FilterPanel values={draft} onChange={(u) => setDraft((d) => applyUpdate(d, u))} />
+  const panel = <FilterPanel values={applied} onChange={applyNow} />
 
   return (
     <div className="mx-auto flex max-w-[1920px] gap-6 px-4 py-6">
@@ -404,33 +391,50 @@ export default function SearchPage() {
               filter list so it is always in view, never below the fold. */}
           <div className="sticky top-4 flex max-h-[calc(100vh-6.5rem)] flex-col rounded-lg bg-white">
             <div className="px-4 pb-1 pt-3 font-semibold">Filters</div>
-            <div className="border-b border-gray-100 p-3">{panelFooter}</div>
+            {/* Hidden while no filter is applied (ActiveFilters renders nothing). */}
+            <div className="border-b border-gray-100 p-3 empty:hidden">{activeFilters(true)}</div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">{panel}</div>
           </div>
         </aside>
       )}
 
       <main className="min-w-0 flex-1">
-        <div className="mb-1 flex gap-2">
-          <Input
+        <SearchModes text={queryDraft} />
+        <div className="mb-1 flex items-center gap-2">
+          {/* Two lines, growing with the text: whole abstracts are welcome.
+              Enter searches; Shift+Enter starts a new line. */}
+          <Input.TextArea
             size="large"
             allowClear
-            prefix={<SearchOutlined className="text-gray-400" />}
-            placeholder="BioProject or SRA study accession (e.g. PRJNA169753, SRP079428), or describe the data"
+            autoSize={{ minRows: 2, maxRows: 8 }}
+            placeholder="Describe the data, or enter accessions (e.g. PRJNA169753, SRP079428) or a paper's DOI or PubMed ID"
             value={queryDraft}
             onChange={(e) => setQueryDraft(e.target.value)}
-            onPressEnter={() => runSearch()}
+            onPressEnter={(e) => {
+              if (e.shiftKey) return
+              e.preventDefault()
+              runSearch()
+            }}
           />
           <Badge dot={queryDirty} offset={[-4, 4]}>
-            <Button type="primary" size="large" onClick={() => runSearch()}>
+            <Button
+              type="primary"
+              size="large"
+              icon={<SearchOutlined />}
+              loading={loading}
+              onClick={() => runSearch()}
+            >
               Search
             </Button>
           </Badge>
         </div>
-        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-500">
           <span>
-            Enter BioProject (PRJNA, PRJEB, PRJDB) or SRA study (SRP, ERP, DRP) accessions, several separated
-            by spaces, or describe the data to find similar projects. Try{' '}
+            Describe the data, or enter BioProject or SRA study accessions (e.g. PRJNA787491, SRP079428), or a
+            paper's DOI or PubMed ID to search with its title and abstract.
+          </span>
+          <span>
+            Example:{' '}
             <button
               type="button"
               className="cursor-pointer border-0 bg-transparent p-0 text-xs text-blue-600 underline-offset-2 hover:underline"
@@ -438,11 +442,10 @@ export default function SearchPage() {
             >
               “{EXAMPLE_QUERY}”
             </button>
-            .
           </span>
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2 pl-6">
           {!isDesktop && (
             <Badge count={Object.keys(applied).length} size="small">
               <Button icon={<FilterOutlined />} onClick={() => setDrawerOpen(true)}>
@@ -451,35 +454,51 @@ export default function SearchPage() {
             </Badge>
           )}
           <span className="text-sm text-gray-600">
-            {showLatest
-              ? `Showing the ${LATEST_COUNT} most recently released BioProjects. Choose filters and click Search to search all projects.`
-              : results
-                ? `${results.total.toLocaleString()} project${results.total === 1 ? '' : 's'}` +
-                  (state.semanticQuery
-                    ? ` similar to “${state.semanticQuery}”` +
-                      (state.sort === RELEVANCE_SORT ? ', most similar first' : '')
-                    : '')
-                : ' '}
+            {noSearch
+              ? null
+              : state.semanticQuery
+                ? (
+                    <>
+                      Search query:{' '}
+                      <span className="rounded border border-solid border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-800">
+                        {resolved?.title || state.semanticQuery}
+                      </span>
+                      {reference && (
+                        <span className="ml-2 text-xs text-gray-500">
+                          {resolving ? (
+                            <>Looking up {referenceLabel(reference)}…</>
+                          ) : resolved ? (
+                            <>
+                              the title and abstract of{' '}
+                              <a href={resolved.url} target="_blank" rel="noreferrer">
+                                {resolved.pmid ? `PubMed ${resolved.pmid}` : `DOI ${resolved.doi}`} <ExportOutlined />
+                              </a>
+                            </>
+                          ) : null}
+                        </span>
+                      )}
+                    </>
+                  )
+                : results
+                  ? `${results.total.toLocaleString()} project${results.total === 1 ? '' : 's'}`
+                  : ' '}
           </span>
+          {/* The table only dims while loading; the spinner sits here, near the
+              search box, so it's in view however long the table is. */}
+          {loading && (
+            <span className="flex items-center gap-2 text-sm text-blue-600">
+              <Spin size="small" /> Searching…
+            </span>
+          )}
         </div>
 
-        <ActiveFilters
-          values={applied}
-          accessions={state.accessions ?? []}
-          onChange={applyNow}
-          onRemoveAccession={(acc) => {
-            const rest = state.accessions!.filter((a) => a !== acc).join(' ')
-            setQueryDraft(rest)
-            state.update({ q: rest || null })
-          }}
-          onClear={clearFilters}
-        />
+        {!isDesktop && activeFilters(false)}
 
         <TagBar
           selected={appliedTags}
           matchAny={applied.tag_any === 'true'}
           params={apiParams}
-          suggest={!showLatest && !error && (results?.total ?? 0) > 0}
+          suggest={!noSearch && !error && (results?.total ?? 0) > 0}
           onAdd={selectTag}
           onRemove={(tag) => applyNow({ tag: appliedTags.filter((t) => t !== tag) })}
           onClear={() => applyNow({ tag: null, tag_any: null })}
@@ -497,37 +516,39 @@ export default function SearchPage() {
           />
         )}
 
-        <Table<SearchHit>
-          rowKey={rowKey}
-          rowClassName={(p) => (expandedKeys.includes(rowKey(p)) ? EXPANDED_ROW : '')}
-          columns={columns}
-          dataSource={error ? [] : (results?.items ?? [])}
-          loading={loading}
-          size="middle"
-          scroll={{ x: 1000 }}
-          locale={{ emptyText }}
-          onChange={onTableChange}
-          expandable={{
-            expandedRowRender: (p) => <ProjectDetails project={p} />,
-            expandRowByClick: true,
-            expandedRowKeys: expandedKeys,
-            onExpandedRowsChange: (keys) => setExpandedKeys(keys as string[]),
-            expandedRowClassName: EXPANDED_DETAILS,
-          }}
-          pagination={{
-            current: state.page,
-            pageSize: state.pageSize,
-            total: results?.total ?? 0,
-            pageSizeOptions: PAGE_SIZES,
-            showSizeChanger: true,
-            showTotal: (total, [from, to]) =>
-              `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()}`,
-            onChange: (page, size) => {
-              state.setPage(page, size)
-              window.scrollTo({ top: 0, behavior: 'smooth' })
-            },
-          }}
-        />
+        {!noSearch && (
+          <Table<SearchHit>
+            rowKey={rowKey}
+            rowClassName={(p) => (expandedKeys.includes(rowKey(p)) ? EXPANDED_ROW : '')}
+            columns={columns}
+            dataSource={error ? [] : (results?.items ?? [])}
+            loading={{ spinning: loading, indicator: <span /> }}
+            size="middle"
+            scroll={{ x: 1000 }}
+            locale={{ emptyText }}
+            onChange={onTableChange}
+            expandable={{
+              expandedRowRender: (p) => <ProjectDetails project={p} />,
+              expandRowByClick: true,
+              expandedRowKeys: expandedKeys,
+              onExpandedRowsChange: (keys) => setExpandedKeys(keys as string[]),
+              expandedRowClassName: EXPANDED_DETAILS,
+            }}
+            pagination={{
+              current: state.page,
+              pageSize: state.pageSize,
+              total: results?.total ?? 0,
+              pageSizeOptions: PAGE_SIZES,
+              showSizeChanger: true,
+              showTotal: (total, [from, to]) =>
+                `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()}`,
+              onChange: (page, size) => {
+                state.setPage(page, size)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              },
+            }}
+          />
+        )}
       </main>
 
       {!isDesktop && (
@@ -536,7 +557,6 @@ export default function SearchPage() {
           placement="left"
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
-          footer={panelFooter}
         >
           {panel}
         </Drawer>

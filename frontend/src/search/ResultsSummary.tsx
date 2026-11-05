@@ -109,7 +109,7 @@ export default function ResultsSummary({ open, onToggle, params, values, onAdd }
           <BarChartOutlined className="text-base text-[#1677ff]" />
           <span className="font-semibold">Summary statistics</span>
           <Text type="secondary" className="hidden text-sm sm:inline">
-            of all results: assays, organisms, samples, countries and release years
+            of current search results
           </Text>
         </button>
         {s && (

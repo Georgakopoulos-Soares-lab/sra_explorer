@@ -4,7 +4,9 @@ Run filters use the study_facets materialized view (backend/sql/study_facets.sql
 when it exists, and fall back to querying sra_metadata directly, which is much
 slower on the full table.
 
-Text search (the q parameter) is hybrid. A semantic search embeds the text
+Text search (the q parameter) is hybrid. A DOI or PubMed ID is first
+replaced by that paper's title and abstract (publications.py), so it searches
+as if they had been pasted. A semantic search embeds the text
 with the model that built bioproject_embeddings (see embeddings.py) and keeps
 projects whose cosine similarity to it is at least SEMANTIC_MIN_SIMILARITY. A
 full-text search (backend/sql/bioproject_fulltext.sql) finds projects
@@ -29,7 +31,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import Session
 from sqlalchemy.types import Text
 
-from . import embeddings, models, schemas
+from . import embeddings, models, publications, schemas
 from .database import SessionLocal, engine, get_db
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -371,6 +373,34 @@ def search_bioprojects(
     return {"total": total, "items": db.scalars(stmt).all()}
 
 
+def query_text(q: str) -> str:
+    """The text to search for: q itself, or, when q is a DOI or PubMed ID,
+    that paper's title and abstract."""
+    ref = publications.parse_reference(q)
+    if not ref:
+        return q
+    try:
+        pub = publications.resolve(*ref)
+    except publications.LookupError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    if pub is None:
+        raise HTTPException(status_code=404, detail=f"No publication found for {publications.label(*ref)}.")
+    return pub.search_text
+
+
+@router.get("/resolve", response_model=schemas.ResolvedPublication)
+def resolve_publication(q: str = Query(..., max_length=1000)):
+    """The paper a DOI or PubMed ID in the search box stands for, so the page
+    can show what is being searched. 400 when q isn't a reference, 404 when
+    the paper isn't found, 502 when the lookup service can't be reached."""
+    ref = publications.parse_reference(q)
+    if not ref:
+        raise HTTPException(status_code=400, detail="Not a DOI or PubMed ID.")
+    query_text(q)  # raises for lookup failures
+    pub = publications.resolve(*ref)
+    return {**pub.__dict__, "url": pub.url}
+
+
 def fused_matches(db: Session, q: str):
     """The text search's candidates, before filters: (query vector, subquery
     with bioproject, score and text_match per project).
@@ -378,6 +408,7 @@ def fused_matches(db: Session, q: str):
     Only the SEMANTIC_CANDIDATES nearest and TEXT_CANDIDATES best text
     matches are considered, so a broad query yields at most their sum.
     """
+    q = query_text(q)
     try:
         query_vec = embeddings.embed(q)
     except Exception:

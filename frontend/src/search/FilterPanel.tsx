@@ -269,109 +269,116 @@ function NumberRangeFilter({ def, values, onChange }: Props & { def: FilterDef }
       />
       {keys[1] && (
         <>
-          <span className="text-gray-400">–</span>
-          <NumberInput
-            key={String(values[keys[1]])}
-            value={values[keys[1]]}
-            placeholder="Max"
-            onCommit={(v) => onChange({ [keys[1]]: v })}
-          />
-        </>
-      )}
-    </div>
-  )
-}
-
-function FlagFilter({ def, values, onChange }: Props & { def: FilterDef }) {
-  const value = (values[def.key] as string | undefined) ?? ''
-  return (
-    <Segmented
-      size="small"
-      value={value}
-      options={[
-        { label: 'Any', value: '' },
-        { label: 'Yes', value: 'true' },
-        { label: 'No', value: 'false' },
-      ]}
-      onChange={(next) => onChange({ [def.key]: next || null })}
-    />
-  )
-}
-
-function Filter(props: Props & { def: FilterDef }) {
-  const { def } = props
-  if (def.kind === 'toggle') {
-    return (
-      <label className="flex cursor-pointer items-center justify-between gap-2">
-        <span className="text-sm">{def.label}</span>
-        <Switch
-          size="small"
-          checked={props.values[def.key] === 'true'}
-          onChange={(on) => props.onChange({ [def.key]: on ? 'true' : null })}
-        />
-      </label>
-    )
-  }
-  if (def.kind === 'flag') {
-    return (
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm">{def.label}</span>
-        <FlagFilter {...props} />
+            <span className="text-gray-400">–</span>
+            <NumberInput
+              key={String(values[keys[1]])}
+              value={values[keys[1]]}
+              placeholder="Max"
+              onCommit={(v) => onChange({ [keys[1]]: v })}
+            />
+          </>
+        )}
       </div>
     )
   }
-  const control = {
-    select: <SelectFilter {...props} />,
-    suggest: <SuggestFilter {...props} />,
-    dateRange: <DateRangeFilter {...props} />,
-    numberRange: <NumberRangeFilter {...props} />,
-    min: <NumberRangeFilter {...props} />,
-  }[def.kind as Exclude<FilterDef['kind'], 'flag' | 'toggle'>]
-  return (
-    <div>
-      <div className="mb-1 text-sm">{def.label}</div>
-      {control}
-    </div>
-  )
-}
 
-const isActive = (values: FilterValues, def: FilterDef) =>
-  paramKeys(def).some((k) => {
-    const v = values[k]
-    return Array.isArray(v) ? v.length > 0 : Boolean(v)
-  })
+  function FlagFilter({ def, values, onChange }: Props & { def: FilterDef }) {
+    const value = (values[def.key] as string | undefined) ?? ''
+    return (
+      <Segmented
+        size="small"
+        value={value}
+        options={[
+          { label: 'Any', value: '' },
+          { label: 'Yes', value: 'true' },
+          { label: 'No', value: 'false' },
+        ]}
+        onChange={(next) => onChange({ [def.key]: next || null })}
+      />
+    )
+  }
 
-export default function FilterPanel(props: Props) {
-  useEffect(lockDropdownWheel, [])
-  return (
-    <Collapse
-      ghost
-      size="small"
-      defaultActiveKey={['organism']}
-      items={FILTER_SECTIONS.map((section) => {
-        const active = section.filters.filter((f) => isActive(props.values, f)).length
-        return {
-          key: section.key,
-          label: (
-            <span className="flex items-center gap-2 font-medium">
-              {section.title}
-              <Badge count={active} size="small" color="blue" />
-            </span>
-          ),
-          children: (
-            <div className="flex flex-col gap-3">
-              {section.hint && (
-                <Typography.Text type="secondary" className="text-xs">
-                  {section.hint}
-                </Typography.Text>
-              )}
-              {section.filters.map((def) => (
-                <Filter key={def.key} def={def} {...props} />
-              ))}
-            </div>
-          ),
-        }
-      })}
-    />
+  function Filter(props: Props & { def: FilterDef }) {
+    const { def } = props
+    if (def.kind === 'toggle') {
+      return (
+        <label className="flex cursor-pointer items-center justify-between gap-2">
+          <span className="text-sm">{def.label}</span>
+          <Switch
+            size="small"
+            checked={props.values[def.key] === 'true'}
+            onChange={(on) => props.onChange({ [def.key]: on ? 'true' : null })}
+          />
+        </label>
+      )
+    }
+    if (def.kind === 'flag') {
+      return (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm">{def.label}</span>
+          <FlagFilter {...props} />
+        </div>
+      )
+    }
+    const control = {
+      select: <SelectFilter {...props} />,
+      suggest: <SuggestFilter {...props} />,
+      dateRange: <DateRangeFilter {...props} />,
+      numberRange: <NumberRangeFilter {...props} />,
+      min: <NumberRangeFilter {...props} />,
+    }[def.kind as Exclude<FilterDef['kind'], 'flag' | 'toggle'>]
+    return (
+      <div>
+        <div className="mb-1 text-sm">{def.label}</div>
+        {control}
+      </div>
+    )
+  }
+
+  const isActive = (values: FilterValues, def: FilterDef) =>
+    paramKeys(def).some((k) => {
+      const v = values[k]
+      return Array.isArray(v) ? v.length > 0 : Boolean(v)
+    })
+
+  export default function FilterPanel(props: Props) {
+    useEffect(lockDropdownWheel, [])
+    return (
+      <>
+      {/* Matches contextFor: options are narrowed by the other filters only. */}
+      <Typography.Text type="secondary" className="block px-2 pt-3 text-xs">
+        Filters update each other: once you choose one, the others list only the values found in
+        the matching projects, with their counts.
+      </Typography.Text>
+      <Collapse
+        ghost
+        size="small"
+        defaultActiveKey={['organism']}
+        items={FILTER_SECTIONS.map((section) => {
+          const active = section.filters.filter((f) => isActive(props.values, f)).length
+          return {
+            key: section.key,
+            label: (
+              <span className="flex items-center gap-2 font-medium">
+                {section.title}
+                <Badge count={active} size="small" color="blue" />
+              </span>
+            ),
+            children: (
+              <div className="flex flex-col gap-3">
+                {section.hint && (
+                  <Typography.Text type="secondary" className="text-xs">
+                    {section.hint}
+                  </Typography.Text>
+                )}
+                {section.filters.map((def) => (
+                  <Filter key={def.key} def={def} {...props} />
+                ))}
+              </div>
+            ),
+          }
+        })}
+      />
+    </>
   )
 }

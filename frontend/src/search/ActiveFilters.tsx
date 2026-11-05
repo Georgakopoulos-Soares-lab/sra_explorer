@@ -44,8 +44,13 @@ function chipsFor(values: FilterValues): Chip[] {
   return chips
 }
 
-export default function ActiveFilters({ values, accessions = [], onChange, onRemoveAccession, onClear }: {
+// Removable chips share TagBar's light sky colour so they stand out.
+const CHIP = '!m-0 !border-sky-200 !bg-sky-50 !text-sky-800'
+
+export default function ActiveFilters({ values, accessions = [], stacked = false, onChange, onRemoveAccession, onClear }: {
   values: FilterValues
+  // Narrow layout for the sidebar: heading and Clear all above the chips.
+  stacked?: boolean
   // Accessions typed in the search box, shown as chips before the filters.
   accessions?: string[]
   onChange: (update: ParamUpdate) => void
@@ -54,14 +59,17 @@ export default function ActiveFilters({ values, accessions = [], onChange, onRem
 }) {
   const chips = chipsFor(values)
   if (chips.length === 0 && accessions.length === 0) return null
-  return (
-    <div className="mb-2 flex items-start gap-2">
-      <span className="w-12 shrink-0 pt-0.5 text-sm text-gray-500">Filters</span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-y-1">
+  const clear = (
+    <Button type="link" size="small" className="shrink-0" onClick={onClear}>
+      Clear all
+    </Button>
+  )
+  const list = (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
       {accessions.map((acc) => (
         <Tag
           key={`accession=${acc}`}
-          color="blue"
+          className={CHIP}
           closable
           onClose={(e) => {
             e.preventDefault()
@@ -74,6 +82,7 @@ export default function ActiveFilters({ values, accessions = [], onChange, onRem
       {chips.map((chip) => (
         <Tag
           key={chip.id}
+          className={CHIP}
           closable
           onClose={(e) => {
             e.preventDefault()
@@ -83,10 +92,24 @@ export default function ActiveFilters({ values, accessions = [], onChange, onRem
           {chip.label}
         </Tag>
       ))}
+    </div>
+  )
+  if (stacked) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-500">Applied filters</span>
+          {clear}
+        </div>
+        {list}
       </div>
-      <Button type="link" size="small" className="shrink-0" onClick={onClear}>
-        Clear all
-      </Button>
+    )
+  }
+  return (
+    <div className="mb-2 flex items-start gap-2 pl-6">
+      <span className="w-12 shrink-0 pt-0.5 text-sm text-gray-500">Filters</span>
+      {list}
+      {clear}
     </div>
   )
 }

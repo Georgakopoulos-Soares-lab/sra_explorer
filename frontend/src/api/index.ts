@@ -6,6 +6,7 @@ import type {
   FacetValue,
   HealthStatus,
   PublicApiDocs,
+  ResolvedPublication,
   RunFilters,
   SearchHit,
   SearchParams,
@@ -50,6 +51,10 @@ export const api = {
   // Matching values for filters with too many values for a dropdown; `context` as for facet.
   suggest: (field: string, q: string, signal?: AbortSignal, context?: SearchParams) =>
     apiGet<FacetValue[]>('/search/suggest', { ...context, field, q }, { signal }),
+
+  // The paper a DOI or PubMed ID in the search box stands for (the search runs on its title and abstract).
+  resolvePublication: (q: string, signal?: AbortSignal) =>
+    apiGet<ResolvedPublication>('/search/resolve', { q }, { signal }),
 
   // The most common tags among a search's top results; takes the search's own parameters.
   tagSummary: (params: SearchParams, signal?: AbortSignal) =>

@@ -222,3 +222,15 @@ export interface SearchSummary {
   years: { year: number; count: number }[]
   dimensions: SummaryDimension[]
 }
+
+// A DOI or PubMed ID from the search box, resolved to the paper it stands for.
+export interface ResolvedPublication {
+  kind: 'doi' | 'pmid'
+  id: string
+  title: string
+  abstract: string
+  pmid: string | null
+  doi: string | null
+  url: string
+  source: 'pubmed' | 'crossref'
+}
