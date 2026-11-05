@@ -18,6 +18,8 @@ const ENA = 'https://www.ebi.ac.uk/ena/browser/view'
 // where a tag on two projects would otherwise come first.
 const MIN_LIFT_COUNT = 20
 const PREVIEW_SIZE = 10
+// Related tags offered under the picker once tags are chosen.
+const SUGGESTIONS = 12
 const THIS_YEAR = new Date().getFullYear()
 
 // Tag sets to try, shown under the picker.
@@ -110,15 +112,17 @@ function TagSelect({ value, onChange }: { value: string[]; onChange: (tags: stri
   )
 }
 
-function ExampleChip({ tags, onClick }: { tags: string[]; onClick: () => void }) {
+function Chip({ label, count, title, onClick }: { label: string; count?: number; title?: string; onClick: () => void }) {
   return (
     <button
       type="button"
+      title={title}
       className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-sky-300 bg-sky-50 px-2 py-0.5 text-xs text-sky-800 hover:border-sky-500 hover:bg-sky-100"
       onClick={onClick}
     >
       <PlusOutlined className="text-[9px]" />
-      {tags.join(' + ')}
+      {label}
+      {count !== undefined && <span className="text-sky-500">{formatInt(count)}</span>}
     </button>
   )
 }
@@ -257,12 +261,43 @@ export default function TagWorkbench({ tags, any, onChange, overview }: {
           At most {MAX_TAGS} tags can be combined; remove one to add another.
         </Text>
       )}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-        <span className="text-gray-500">Try:</span>
-        {EXAMPLES.map((ex) => (
-          <ExampleChip key={ex.join('+')} tags={ex} onClick={() => onChange(ex, false)} />
-        ))}
-      </div>
+      {tags.length === 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+          <span className="text-gray-500">Try:</span>
+          {EXAMPLES.map((ex) => (
+            <Chip key={ex.join('+')} label={ex.join(' + ')} onClick={() => onChange(ex, false)} />
+          ))}
+        </div>
+      ) : (
+        data &&
+        data.related.length > 0 && (
+          <div className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs ${stale ? 'opacity-50' : ''}`}>
+            <span
+              className="text-gray-500"
+              title={
+                anyOf
+                  ? 'The tags most often on the matching projects, with how many of the matches have each'
+                  : 'The tags most often on the matching projects, with how many projects you get by adding each'
+              }
+            >
+              {anyOf ? 'Also tagged:' : 'Narrow down:'}
+            </span>
+            {data.related.slice(0, SUGGESTIONS).map((t) => (
+              <Chip
+                key={t.value}
+                label={t.value}
+                count={t.count}
+                title={
+                  anyOf
+                    ? `${formatInt(t.count)} of the matching projects also have this tag`
+                    : `${formatInt(t.count)} BioProjects have the chosen tags and this one`
+                }
+                onClick={() => addTags([t.value])}
+              />
+            ))}
+          </div>
+        )
+      )}
 
       {tags.length === 0 ? (
         <div className="mt-4 rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
