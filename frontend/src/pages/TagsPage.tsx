@@ -9,6 +9,7 @@ import { BarList, ColumnChart, LineChart, SeriesLegend } from '../stats/charts'
 import { downloadFile, formatInt, formatPct, SERIES_COLORS } from '../stats/format'
 import HowTagsAreMade from '../tags/HowTagsAreMade'
 import { isOrganism, MAX_TAGS, scrollToWorkbench } from '../tags/links'
+import TagNetwork from '../tags/TagNetwork'
 import TagPairs from '../tags/TagPairs'
 import TagWorkbench from '../tags/TagWorkbench'
 
@@ -436,6 +437,9 @@ export default function TagsPage() {
             <TopTagsCard overview={overview} onPick={pick} />
             <TagPairs network={overview.network} tagged={overview.totals.tagged} onPick={pick} />
           </Section>
+          <div className="mt-4">
+            <TagNetwork network={overview.network} tagged={overview.totals.tagged} onPick={pick} />
+          </div>
 
           <Section
             id="coverage"
