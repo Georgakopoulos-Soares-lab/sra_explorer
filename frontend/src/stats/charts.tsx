@@ -56,7 +56,8 @@ function barPath(x: number, y: number, w: number, base: number) {
   return `M${x},${base}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${base}Z`
 }
 
-const MARGIN = { top: 12, right: 8, bottom: 26, left: 52 }
+// The right margin leaves room for a centred "2026*" under the last column.
+const MARGIN = { top: 12, right: 20, bottom: 26, left: 52 }
 
 // Columns per year. `partial` marks the last column as an incomplete year.
 export function ColumnChart({ data, format, unit, partial, height = 260 }: {
@@ -75,8 +76,9 @@ export function ColumnChart({ data, format, unit, partial, height = 260 }: {
   const yOf = (v: number) => MARGIN.top + innerH - (v / top) * innerH
   const band = data.length ? innerW / data.length : 0
   const barW = Math.max(2, Math.min(24, band - 2))
-  // Label every n-th year so labels don't touch; always the last.
-  const every = Math.max(1, Math.ceil(36 / Math.max(band, 1)))
+  // Label every n-th year so labels don't touch, counted back from the last,
+  // which is always labelled (it may carry a partial-year mark).
+  const every = Math.max(1, Math.ceil(42 / Math.max(band, 1)))
   const base = MARGIN.top + innerH
   const hovered = hover === null ? null : data[hover]
 
@@ -102,7 +104,7 @@ export function ColumnChart({ data, format, unit, partial, height = 260 }: {
                   fill={SERIES_COLORS[0]}
                   fillOpacity={isPartial ? 0.4 : hover === null || hover === i ? 1 : 0.75}
                 />
-                {(i % every === 0 || i === data.length - 1) && (
+                {(data.length - 1 - i) % every === 0 && (
                   <text x={x + barW / 2} y={base + 16} textAnchor="middle" fontSize={11} fill={MUTED} className="tabular-nums">
                     {isPartial ? `${d.x}*` : d.x}
                   </text>
@@ -212,7 +214,7 @@ export function LineChart({ xs, series, format, height = 280, yMax }: {
             </g>
           ))}
           {xs.map((x, i) =>
-            i % every === 0 || i === xs.length - 1 ? (
+            (xs.length - 1 - i) % every === 0 ? (
               <text key={x} x={xOf(i)} y={margin.top + innerH + 16} textAnchor="middle" fontSize={11} fill={MUTED} className="tabular-nums">
                 {x}
               </text>
@@ -309,6 +311,8 @@ export interface BarItem {
   detail?: ReactNode
   // Makes the label a link, e.g. to the search page with this value filtered.
   to?: string
+  // Or makes it a button, e.g. adding this value as a filter.
+  onClick?: () => void
 }
 
 // Horizontal bars, longest first, with the value at the bar's end.
@@ -324,7 +328,19 @@ export function BarList({ items, format }: { items: BarItem[]; format: (n: numbe
           onMouseEnter={() => setHover(i)}
         >
           <span className="truncate text-right" title={item.label} style={{ color: INK }}>
-            {item.to ? <Link to={item.to}>{item.label}</Link> : item.label}
+            {item.to ? (
+              <Link to={item.to}>{item.label}</Link>
+            ) : item.onClick ? (
+              <button
+                type="button"
+                onClick={item.onClick}
+                className="cursor-pointer border-0 bg-transparent p-0 text-xs text-[#1677ff] hover:underline"
+              >
+                {item.label}
+              </button>
+            ) : (
+              item.label
+            )}
           </span>
           <span className="flex min-w-0 items-center gap-2">
             <span

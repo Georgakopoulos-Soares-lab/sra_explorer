@@ -1,4 +1,4 @@
-import { CloudDownloadOutlined, ExportOutlined, FilterOutlined, SearchOutlined } from '@ant-design/icons'
+import { CloudDownloadOutlined, ExportOutlined, FileTextOutlined, FilterOutlined, ReadOutlined, SearchOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Spin, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType, TableProps } from 'antd'
 import { useEffect, useState } from 'react'
@@ -6,8 +6,11 @@ import { api, type Bioproject, type SearchHit, type SearchResults } from '../api
 import ExternalLink from '../components/ExternalLink'
 import { countRuns } from '../ena/api'
 import ActiveFilters from '../search/ActiveFilters'
+import DetailSection from '../search/DetailSection'
 import FilterPanel from '../search/FilterPanel'
 import Publications from '../search/Publications'
+import ResultsSummary from '../search/ResultsSummary'
+import SimilarProjects from '../search/SimilarProjects'
 import TagBar from '../search/TagBar'
 import TagList from '../search/TagList'
 import { projectPublications } from '../search/parsePublications'
@@ -36,6 +39,8 @@ const publicationShade = (n: number) =>
       ? '!border-[#73d13d] !bg-[#95de64] !text-[#135200]' // 2: green-4, green-9 text
       : '!border-[#95de64] !bg-[#d9f7be] !text-[#389e0d]' // 1: green-2, green-7 text
 const rowKey = (p: SearchHit) => `${p.bioproject}:${p.sra_study}`
+// Small muted label above a field of an expanded result (Title, Description).
+const FIELD_LABEL = 'mb-0.5 text-xs font-medium uppercase tracking-wide text-gray-400'
 // An expanded project and its details share a tint and a blue bar on the left,
 // and a border under the details marks where the next project starts.
 const EXPANDED_ROW = '[&>td]:!bg-blue-50 [&>td:first-child]:shadow-[inset_3px_0_0_#1677ff]'
@@ -120,24 +125,36 @@ function ProjectDetails({ project: p }: { project: Bioproject }) {
     },
   ].filter((i) => i.value)
 
+  // Three blocks, then the files: the project itself, its publications, and
+  // similar projects.
   return (
     <div className="flex flex-col gap-3 py-1">
-      {p.description && (
-        <Typography.Paragraph className="!mb-0 whitespace-pre-line">{p.description}</Typography.Paragraph>
-      )}
-      {items.length > 0 && (
-        <Descriptions
-          size="small"
-          column={{ xs: 1, md: 2, xl: 3 }}
-          items={items.map((i) => ({ key: i.label, label: i.label, children: i.value }))}
-        />
-      )}
+      <DetailSection icon={<FileTextOutlined />} title="Project">
+        <div className={FIELD_LABEL}>Title</div>
+        <Typography.Title level={5} className="!mb-3 !mt-0">
+          {p.title || p.name || <Typography.Text type="secondary">Untitled</Typography.Text>}
+        </Typography.Title>
+        {p.description && (
+          <>
+            <div className={FIELD_LABEL}>Description</div>
+            <Typography.Paragraph className="!mb-2 whitespace-pre-line">{p.description}</Typography.Paragraph>
+          </>
+        )}
+        {items.length > 0 && (
+          <Descriptions
+            size="small"
+            className="border-t border-gray-100 pt-2"
+            column={{ xs: 1, md: 2, xl: 3 }}
+            items={items.map((i) => ({ key: i.label, label: i.label, children: i.value }))}
+          />
+        )}
+      </DetailSection>
       {publications.length > 0 && (
-        <div className="max-w-4xl border-t border-gray-200 pt-2">
-          <div className="mb-1 text-xs text-gray-500">Publications ({publications.length})</div>
+        <DetailSection icon={<ReadOutlined />} title={`Publications (${publications.length})`}>
           <Publications items={publications} />
-        </div>
+        </DetailSection>
       )}
+      <SimilarProjects bioproject={p.bioproject} />
       <FilesSummary study={p.sra_study} />
     </div>
   )
@@ -163,6 +180,8 @@ export default function SearchPage() {
   const dirty = filtersKey(draft) + queryDraft.trim() !== appliedKey
 
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // The results summary stays open from one search to the next once opened.
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
 
   // With no filters applied, the page shows the latest projects instead of
@@ -177,6 +196,8 @@ export default function SearchPage() {
   const [results, setResults] = useState<SearchResults | null>(null)
   const loading = response?.key !== requestKey
   const error = loading ? null : (response?.error ?? null)
+  // Only real searches with results are summarised, not the latest-projects list.
+  const canSummarise = !showLatest && !error && (loading || (results?.total ?? 0) > 0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -216,6 +237,12 @@ export default function SearchPage() {
     if (query !== appliedQuery) setQueryDraft(query)
     setDraftFor(filtersKey(next) + query)
     state.apply(next, query)
+  }
+
+  // A value clicked in the results summary is added to that filter's selection.
+  const addFilterValue = (filter: string, value: string) => {
+    const current = ([] as string[]).concat(applied[filter] ?? [])
+    if (!current.includes(value)) applyNow({ [filter]: [...current, value] })
   }
 
   const appliedTags = (applied.tag as string[] | undefined) ?? []
@@ -442,6 +469,16 @@ export default function SearchPage() {
         />
 
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}
+
+        {canSummarise && (
+          <ResultsSummary
+            open={summaryOpen}
+            onToggle={() => setSummaryOpen((o) => !o)}
+            params={apiParams}
+            values={applied}
+            onAdd={addFilterValue}
+          />
+        )}
 
         <Table<SearchHit>
           rowKey={rowKey}

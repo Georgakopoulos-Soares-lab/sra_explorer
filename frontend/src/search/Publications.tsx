@@ -102,10 +102,13 @@ export default function Publications({ items }: { items: Publication[] }) {
     }
   })
 
+  // Shown inside an expanded result row, where antd indents nested tables by
+  // the expand column and pulls them past the right edge; !m-0 undoes that so
+  // the table fits its Publications box.
   return (
     <Table
       size="small"
-      className="text-xs [&_.ant-table-cell]:!py-1 [&_.ant-table-cell]:!text-xs"
+      className="text-xs [&_.ant-table]:!m-0 [&_.ant-table-cell]:!py-1 [&_.ant-table-cell]:!text-xs"
       columns={columns}
       dataSource={rows}
       pagination={false}

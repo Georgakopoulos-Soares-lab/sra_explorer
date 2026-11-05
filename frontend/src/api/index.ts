@@ -7,8 +7,10 @@ import type {
   HealthStatus,
   PublicApiDocs,
   RunFilters,
+  SearchHit,
   SearchParams,
   SearchResults,
+  SearchSummary,
   SraRun,
   Stats,
 } from './types'
@@ -52,6 +54,14 @@ export const api = {
   // The most common tags among a search's top results; takes the search's own parameters.
   tagSummary: (params: SearchParams, signal?: AbortSignal) =>
     apiGet<FacetValue[]>('/search/tag-summary', params, { signal }),
+
+  // Counts over everything a search matches (not just the page shown); takes the search's own parameters.
+  searchSummary: (params: SearchParams, signal?: AbortSignal) =>
+    apiGet<SearchSummary>('/search/summary', params, { signal }),
+
+  // The projects most similar in description to this one, most similar first.
+  similarBioprojects: (bioproject: string, limit = 10, signal?: AbortSignal) =>
+    apiGet<SearchHit[]>(`/search/similar/${encodeURIComponent(bioproject)}`, { limit }, { signal }),
 
   stats: (signal?: AbortSignal) => apiGet<Stats>('/search/stats', undefined, { signal }),
 

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import admin, embeddings, models, normalize, public_api, schemas, search, statistics
+from . import admin, embeddings, models, normalize, public_api, schemas, search, search_summary, statistics
 from .database import Base, engine, get_db
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(search.router)
+app.include_router(search_summary.router)
 app.include_router(statistics.router)
 app.include_router(public_api.router)
 app.include_router(public_api.docs_router)

@@ -34,7 +34,7 @@ const formatDate = (iso: string) =>
 function partialYear(stats: DatabaseStatistics) {
   const through = stats.data_through
   if (!through || through.endsWith('-12-31')) return undefined
-  return { x: Number(through.slice(0, 4)), note: `Up to ${formatDate(through)}` }
+  return { x: Number(through.slice(0, 4)), note: `Up to ${formatDate(through)}`, through: formatDate(through) }
 }
 
 function Section({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {
@@ -106,7 +106,7 @@ function GrowthCard({ stats }: { stats: DatabaseStatistics }) {
       caption={
         <>
           BioProjects by the release of their first data, SRA studies by the release of their first run, runs by their own
-          release date.{partial && ` * ${partial.x} is ${partial.note.toLowerCase()}.`}
+          release date.{partial && ` * ${partial.x} is up to ${partial.through}.`}
         </>
       }
       controls={

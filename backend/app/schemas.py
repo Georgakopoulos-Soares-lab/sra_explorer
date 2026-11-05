@@ -210,3 +210,29 @@ class DatabaseStatistics(BaseModel):
     totals: StatisticsTotals
     years: list[YearCounts]
     dimensions: list[Dimension]
+
+
+# Search result summary (search_summary.py)
+
+
+class SummaryDimension(BaseModel):
+    name: str
+    label: str
+    unit: str  # projects, studies
+    # Units among the results with a known value.
+    known: int
+    # The search page filter that selects a value; None when there is none.
+    filter: Optional[str] = None
+    # The most common values (at most 10), most common first.
+    values: list[CategoryCount]
+
+
+class SearchSummary(BaseModel):
+    projects: int
+    studies: int
+    runs: int
+    projects_published: int
+    projects_geo: int
+    # Projects per release year.
+    years: list[YearCount]
+    dimensions: list[SummaryDimension]

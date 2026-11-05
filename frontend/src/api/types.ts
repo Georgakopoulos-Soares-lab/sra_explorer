@@ -197,3 +197,28 @@ export interface DatabaseStatistics {
   years: YearCounts[]
   dimensions: StatisticsDimension[]
 }
+
+// The search page's results summary (GET /search/summary; backend/app/search_summary.py).
+
+export interface SummaryDimension {
+  name: string
+  label: string
+  unit: 'projects' | 'studies'
+  // Units among the results with a known value.
+  known: number
+  // The search page filter that selects a value; null when there is none.
+  filter: string | null
+  // The most common values (at most 10), most common first.
+  values: { value: string; count: number }[]
+}
+
+export interface SearchSummary {
+  projects: number
+  studies: number
+  runs: number
+  projects_published: number
+  projects_geo: number
+  // Projects per release year.
+  years: { year: number; count: number }[]
+  dimensions: SummaryDimension[]
+}

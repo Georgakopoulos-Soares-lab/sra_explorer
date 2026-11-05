@@ -492,6 +492,50 @@ def latest_bioprojects(
     return db.scalars(stmt).all()
 
 
+# Similar projects searched through the HNSW index; more than are returned,
+# since a few may lack a bioprojects row.
+SIMILAR_CANDIDATES = 100
+
+
+@router.get("/similar/{bioproject}", response_model=list[schemas.SearchHit])
+def similar_bioprojects(
+    bioproject: str,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """The projects whose descriptions are most similar to this project's, by
+    the cosine similarity of their embeddings, most similar first.
+
+    One row per BioProject (its most recently released SRA study). Empty
+    when the project has no embedding.
+    """
+    vector = db.scalar(select(E.embedding).where(E.bioproject == bioproject))
+    if vector is None:
+        return []
+    db.execute(text(f"SET LOCAL hnsw.ef_search = {SIMILAR_CANDIDATES}"))
+    distance = E.embedding.cosine_distance(vector)
+    nearest = (
+        select(E.bioproject, distance.label("distance"))
+        .where(E.bioproject != bioproject)
+        .order_by(distance)
+        .limit(SIMILAR_CANDIDATES)
+        .subquery()
+    )
+    stmt = (
+        select(B, nearest.c.distance)
+        .join(nearest, nearest.c.bioproject == B.bioproject)
+        .distinct(nearest.c.distance, B.bioproject)
+        .order_by(nearest.c.distance, B.bioproject, B.release_date.desc().nulls_last())
+    )
+    items = []
+    for p, dist in db.execute(stmt):
+        if len(items) == limit:
+            break
+        # Vectors are normalised, so similarity = 1 - cosine distance.
+        items.append({**schemas.BioprojectOut.model_validate(p).model_dump(), "similarity": round(1 - dist, 4)})
+    return items
+
+
 # Fields with few distinct values are sent whole as dropdown options. The rest
 # have too many values for a dropdown and are searched through /suggest.
 FACET_FIELDS = [
