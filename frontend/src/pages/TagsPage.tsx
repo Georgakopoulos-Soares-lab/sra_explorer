@@ -1,5 +1,5 @@
 import { DownloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Segmented, Skeleton, Statistic, Typography } from 'antd'
+import { Alert, Button, Card, Divider, Segmented, Skeleton, Statistic, Typography } from 'antd'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { api, ApiError, type TagOverview } from '../api'
@@ -421,7 +421,9 @@ export default function TagsPage() {
 
       {overview && (
         <>
-          <section className="mt-10">
+          {/* Above: finding projects. Below: statistics about the tags. */}
+          <Divider className="!mt-14 !mb-10" />
+          <section>
             <Title level={3} className="!mb-1">
               The tags in numbers
             </Title>
