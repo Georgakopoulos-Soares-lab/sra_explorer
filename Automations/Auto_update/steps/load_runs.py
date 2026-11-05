@@ -180,6 +180,8 @@ def new_rows(ctx: Context, files: Sequence[Path], existing: AccessionSet, stats:
                 continue
             columns = [candidates.column(c).to_pylist() for c in common.RUN_COLUMNS]
             for row in zip(*columns):
+                if limit is not None and stats["new_runs"] >= limit:
+                    break
                 acc = row[acc_index]
                 if not acc or acc in seen:
                     continue

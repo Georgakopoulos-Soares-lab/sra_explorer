@@ -48,24 +48,18 @@ def work_paths() -> tuple[Path, Path, Path]:
             common.WORK_DIR / "tag_output.tsv")
 
 
-def input_bioprojects(path: Path) -> set[str]:
-    with open(path, newline="", encoding="utf-8") as f:
-        return {row["bioproject"] for row in csv.DictReader(f)}
-
-
-def can_resume(ctx: common.Context, targets: list[str]) -> bool:
-    """True when an interrupted run left an input and a (partial) output that
-    cover today's targets. If the targets grew meanwhile (the projects step
-    ran again), the partial output is given up and the run starts over."""
-    in_path, emb_path, out_path = work_paths()
-    if not (in_path.exists() and emb_path.exists() and out_path.exists()):
-        return False
-    missing = set(targets) - input_bioprojects(in_path)
-    if missing:
-        ctx.log.info("previous work files don't cover %d of today's targets; starting over", len(missing))
-        return False
-    ctx.log.info("resuming the previous run: %d bioprojects already in %s", count_output(out_path), out_path.name)
-    return True
+def recover_previous_run(ctx: common.Context) -> int:
+    """Upserts what an interrupted run had already tagged, then removes its
+    work files, so the step starts from a fresh target list (projects tagged
+    by the old run are no longer untagged, queued ones whose text changed
+    since are tagged again from their current text). Returns rows recovered."""
+    _, _, out_path = work_paths()
+    recovered = 0
+    if out_path.exists() and count_output(out_path) > 0:
+        recovered = upsert(ctx, out_path)
+        ctx.log.info("recovered %d tagged bioprojects from an interrupted run", recovered)
+    remove_work_files()
+    return recovered
 
 
 def write_input(path: Path, rows: Iterable[dict]) -> None:
@@ -195,9 +189,14 @@ def run_in_own_group(ctx: common.Context, cmd: list, env: dict, cwd: Path) -> No
 
     reader = threading.Thread(target=pump, daemon=True)
     reader.start()
-    code = proc.wait()
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(proc.pid, signal.SIGTERM)  # leftover workers, if any
+    try:
+        code = proc.wait()
+    finally:
+        # Also on Ctrl-C / SIGTERM of the pipeline: the script's own session
+        # does not get the terminal's signal, so it would otherwise keep
+        # tagging (and writing the output file) after the pipeline is gone.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGTERM)
     reader.join(timeout=60)
     if code != 0:
         raise RuntimeError(f"{cmd[0]} exited with {code}")
@@ -213,6 +212,7 @@ def run_extract_tags(ctx: common.Context, in_path: Path, emb_path: Path, out_pat
 # ---------------------------------------------------------------- step
 def run(ctx: common.Context) -> dict:
     common.WORK_DIR.mkdir(parents=True, exist_ok=True)
+    recovered = recover_previous_run(ctx) if not ctx.options.dry_run else 0
     pending = ctx.pending_read("retag")
     with ctx.connect() as conn:
         backfill = backfill_targets(ctx, conn, pending)
@@ -222,7 +222,8 @@ def run(ctx: common.Context) -> dict:
         rows = fetch_text(conn, targets)  # drops queued accessions that aren't in bioprojects
         targets = [r["bioproject"] for r in rows]
         vectors = fetch_embeddings(conn, targets) if targets and not ctx.options.dry_run else []
-    result = {"pending": len(pending), "backfill": len(backfill), "targets": len(targets), "tagged": 0, "upserted": 0}
+    result = {"pending": len(pending), "backfill": len(backfill), "targets": len(targets), "tagged": 0,
+              "upserted": 0, "recovered": recovered}
     ctx.log.info("%d bioprojects to tag: %d queued (new or changed text), %d backfill (cap %d)",
                  len(targets), len(pending), len(backfill), ctx.config.tag_backfill)
 
@@ -231,14 +232,11 @@ def run(ctx: common.Context) -> dict:
         return result
     if not targets:
         ctx.pending_clear("retag")
-        remove_work_files()
         return result
 
     in_path, emb_path, out_path = work_paths()
-    if not can_resume(ctx, targets):
-        remove_work_files()
-        write_input(in_path, rows)
-        write_embeddings(emb_path, vectors)
+    write_input(in_path, rows)
+    write_embeddings(emb_path, vectors)
     ctx.log.info("%d of %d targets have an embedding (tags of the others are not relevance-filtered)",
                  len(vectors), len(targets))
 

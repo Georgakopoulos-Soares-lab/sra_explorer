@@ -205,14 +205,15 @@ def download_snapshot(ctx: common.Context) -> dict:
         return keep_local_snapshot(ctx, f"--snapshot {ctx.options.snapshot} is pinned but the bucket holds {snapshot}")
 
     folder = common.SNAPSHOTS_DIR / snapshot
-    folder.mkdir(parents=True, exist_ok=True)
+    if not ctx.options.dry_run:
+        folder.mkdir(parents=True, exist_ok=True)
     result = {"snapshot": snapshot, "parquet_files": len(objects), "downloaded": 0}
     if marker_matches(folder, objects):
         ctx.log.info("snapshot %s already complete in %s", snapshot, folder)
         return result
 
     todo = [obj for obj in objects if not is_present(folder, obj)]
-    parts = stale_parts(folder)
+    parts = stale_parts(folder) if folder.is_dir() else []
     ctx.log.info("%s: %d files present with the listed size, %d to download (%.1f GB), %d partial file(s) ignored",
                  folder, len(objects) - len(todo), len(todo), sum(o["size"] for o in todo) / 1e9, len(parts))
     if ctx.options.dry_run:

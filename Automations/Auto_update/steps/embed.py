@@ -19,7 +19,6 @@ simply reruns.
 from __future__ import annotations
 
 import csv
-import json
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -59,33 +58,25 @@ def work_paths() -> tuple[Path, Path, Path]:
     return common.WORK_DIR / "embed_input.csv", out, out.with_name(out.name + ".progress")
 
 
-def input_bioprojects(path: Path) -> set[str]:
-    with open(path, newline="", encoding="utf-8") as f:
-        return {row["bioproject"] for row in csv.DictReader(f)}
+def recover_previous_run(ctx: common.Context) -> int:
+    """Upserts what an interrupted run had already embedded, then removes its
+    work files, so the step starts from a fresh target list.
 
-
-def can_resume(ctx: common.Context, targets: list[dict]) -> bool:
-    """True when an interrupted run left work files that cover today's targets.
-
-    The script refuses an input file that changed since its checkpoint, so the
-    input is only reused as is. If the targets grew meanwhile (the projects
-    step ran again), the partial output is given up and the run starts over.
+    The script checkpoints whole chunks, so every complete line of the old
+    output is a finished embedding; loading it keeps that work (a full first
+    run takes most of a day). Starting over with a fresh input afterwards,
+    rather than resuming the old one, means a project whose text changed
+    since the old input was written is embedded from its current text
+    (it is still queued) and projects added since are included.
+    Returns the rows recovered.
     """
-    in_path, out_path, progress = work_paths()
-    if not (in_path.exists() and progress.exists()):
-        return False
-    try:
-        state = json.loads(progress.read_text())
-    except ValueError:
-        return False
-    missing = {t["bioproject"] for t in targets} - input_bioprojects(in_path)
-    if missing:
-        ctx.log.info("previous work files don't cover %d of today's targets; starting over", len(missing))
-        return False
-    ctx.log.info("resuming the previous run: %s input rows done, %s written%s",
-                 f"{state.get('rows_done', 0):,}", f"{state.get('projects_written', 0):,}",
-                 " (already complete)" if state.get("done") else "")
-    return True
+    _, out_path, _ = work_paths()
+    recovered = 0
+    if out_path.exists() and count_output(out_path) > 0:
+        recovered = upsert(ctx, out_path)
+        ctx.log.info("recovered %d embeddings from an interrupted run", recovered)
+    remove_work_files()
+    return recovered
 
 
 def write_input(path: Path, targets: Iterable[dict]) -> None:
@@ -175,9 +166,11 @@ def upsert(ctx: common.Context, out_path: Path) -> int:
 # ---------------------------------------------------------------- step
 def run(ctx: common.Context) -> dict:
     common.WORK_DIR.mkdir(parents=True, exist_ok=True)
+    recovered = recover_previous_run(ctx) if not ctx.options.dry_run else 0
     pending = ctx.pending_read("reembed")
     targets, missing, changed = fetch_targets(ctx, pending)
-    result = {"targets": len(targets), "missing": missing, "changed_text": changed, "embedded": 0, "upserted": 0}
+    result = {"targets": len(targets), "missing": missing, "changed_text": changed, "embedded": 0,
+              "upserted": 0, "recovered": recovered}
     ctx.log.info("%d bioprojects to embed: %d without an embedding, %d with changed text (%d queued)",
                  len(targets), missing, changed, len(pending))
 
@@ -186,13 +179,10 @@ def run(ctx: common.Context) -> dict:
         return result
     if not targets:
         ctx.pending_clear("reembed")
-        remove_work_files()
         return result
 
     in_path, out_path, _ = work_paths()
-    if not can_resume(ctx, targets):
-        remove_work_files()
-        write_input(in_path, targets)
+    write_input(in_path, targets)
 
     cmd = [common.BACKEND_PYTHON, common.CREATE_EMBEDDINGS_SCRIPT, "--input", in_path, "--output", out_path,
            "--threads", ctx.config.threads, "--chunk-size", CHUNK_SIZE]

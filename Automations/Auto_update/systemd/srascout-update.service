@@ -27,6 +27,5 @@ TimeoutStartSec=infinity
 # update.py already refuses to run twice at once (flock); let a failure be seen in
 # `systemctl status` rather than retried blindly. The timer runs it again next week.
 Restart=no
-
-[Install]
-WantedBy=multi-user.target
+# No [Install] section on purpose: only the timer starts this unit. Enabling the
+# service itself would run the whole pipeline at every boot.

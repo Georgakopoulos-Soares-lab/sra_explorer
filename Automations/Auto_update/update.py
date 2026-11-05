@@ -14,7 +14,8 @@ Usage (from Automations/Auto_update, with its .venv):
   update.py --dry-run             compute everything, write nothing to the database
   update.py --limit N --files N --snapshot NAME   small inputs for testing
 
-Exit codes: 0 ok, 1 a step failed, 2 bad arguments, 3 another run holds the lock.
+Exit codes: 0 ok, 1 a step failed, 2 bad arguments, 3 another run holds the lock,
+130 interrupted (Ctrl-C or `systemctl stop`).
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import importlib
 import importlib.util
 import os
 import re
+import signal
 import sys
 import time
 import traceback
@@ -79,8 +81,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     for name in ("limit", "files"):
         value = getattr(args, name)
-        if value is not None and value < 0:
-            parser.error(f"--{name} must be 0 or more")
+        if value is not None and value < 1:
+            parser.error(f"--{name} must be 1 or more (use --dry-run to write nothing)")
     return args
 
 
@@ -153,9 +155,9 @@ def log_configuration(ctx: common.Context, selected: list[str]) -> None:
     ctx.log.info("run %s: steps %s", ctx.run_id, ", ".join(selected))
     ctx.log.info("database %s (%s)", cfg.database_name, mask_password(cfg.dsn))
     ctx.log.info(
-        "config: threads=%d jattr_workers=%d tag_workers=%d tag_threads=%d tag_backfill=%d keep_snapshots=%d "
+        "config: threads=%d jattr_workers=%d tag_workers=%d tag_threads=%d tag_backfill=%d keep_downloads=%s keep_snapshots=%d "
         "restart_api=%s api_service=%s hf_home=%s download_concurrency=%d",
-        cfg.threads, cfg.jattr_workers, cfg.tag_workers, cfg.tag_threads, cfg.tag_backfill, cfg.keep_snapshots,
+        cfg.threads, cfg.jattr_workers, cfg.tag_workers, cfg.tag_threads, cfg.tag_backfill, cfg.keep_downloads, cfg.keep_snapshots,
         cfg.restart_api, cfg.api_service, cfg.hf_home, cfg.download_concurrency,
     )
     opts = ctx.options
@@ -208,7 +210,7 @@ def run_steps(ctx: common.Context, selected: list[str], started: dt.datetime) ->
                 result = mod.run(ctx)
         except KeyboardInterrupt:
             durations[step] = time.monotonic() - t0
-            ctx.log.error("step %s interrupted", step)
+            ctx.log.error("step %s interrupted; rerun with --from %s", step, step)
             write_state(ctx.run_id, started, "interrupted", selected, ctx, durations, failed_step=step)
             return 130
         except Exception as exc:  # noqa: BLE001  (any failure stops the run; the log has the traceback)
@@ -243,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
     lock = acquire_lock()
     if lock is None:
         return EXIT_LOCKED
+
+    # `systemctl stop` sends SIGTERM: treat it like Ctrl-C, so the running
+    # step's transaction rolls back and last_run.json says "interrupted".
+    def terminate(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, terminate)
 
     # The website runs on the same box: give its API and Postgres priority over
     # us. Child processes (embedding, tagging, wget) inherit the niceness.

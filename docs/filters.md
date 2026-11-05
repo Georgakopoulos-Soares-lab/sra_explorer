@@ -28,7 +28,7 @@ Related pages:
 └─────────────────────┘
 ```
 
-The page opens with the 100 most recently released projects. Choosing filters or typing in the search box and clicking **Search** searches all 670,000 projects. The applied search is kept in the URL (for example `/search?organism=Mus%20musculus&tissue=liver`), so it can be bookmarked and shared, and the back button returns to the previous search.
+The page opens with the 100 most recently released projects. Choosing filters and clicking **Apply filters**, or typing in the search box and clicking **Search**, searches all 670,000 projects. The applied search is kept in the URL (for example `/search?organism=Mus%20musculus&tissue=liver`), so it can be bookmarked and shared, and the back button returns to the previous search.
 
 ## The search box
 
@@ -41,7 +41,7 @@ The text search and the filters combine: the filters are applied to the text sea
 
 ## The filter panel
 
-Filter changes are drafts until **Search** is clicked; unapplied changes are flagged above the button. **Reset** clears everything, including the search box.
+Filter changes are drafts until **Apply filters** (at the top of the panel) or the text box's **Search** is clicked; unapplied changes are flagged above the button. **Apply filters** applies only the filters and keeps the current text search; **Search** applies both the typed text and any pending filter changes. **Reset** clears the filters; a text search stays.
 
 ### Organism, samples and sequencing
 
@@ -117,7 +117,7 @@ Other details:
 Each filter only offers values found among the projects that match the other filters chosen in the panel, with counts of those projects. For example, after choosing Organism *Mus musculus* and Tissue *liver*, Sex offers male (1,202), female (505), mixed (16) and neuter (2), instead of the counts over all projects. Choosing Supergroup *Viruses* makes Organism suggest SARS-CoV-2, Influenza A virus and HIV-1 first.
 
 - A filter ignores its own selection, so more of its values can still be added.
-- The panel's current choices count, including ones not yet applied with **Search**, and a filter reloads its options when the others change.
+- The panel's current choices count, including ones not yet applied with **Apply filters**, and a filter reloads its options when the others change.
 - The counts match what a search with that value finds.
 - The text in the search box doesn't narrow the filters; only the panel's choices do.
 

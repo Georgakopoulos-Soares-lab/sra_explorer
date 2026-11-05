@@ -1,6 +1,6 @@
 # The weekly update
 
-Every Sunday at 02:00 the production host brings the database up to date on its own: it downloads the newest SRA metadata snapshot and NCBI's `bioproject.xml`, inserts the new runs and projects, recomputes the sample attributes, refreshes the views, embeds and tags the new projects and restarts the API. It only ever **inserts and updates** rows; nothing is deleted from the data tables.
+Every Sunday at 02:00 the production host brings the database up to date on its own (once `bash Automations/Auto_update/install.sh` has installed the timer; `systemctl list-timers srascout-update.timer` confirms it): it downloads the newest SRA metadata snapshot and NCBI's `bioproject.xml`, inserts the new runs and projects, recomputes the sample attributes, refreshes the views, embeds and tags the new projects and restarts the API. It only ever **inserts and updates** rows; nothing is deleted from the data tables.
 
 The pipeline is `Automations/Auto_update/update.py`, run by a systemd timer. [production.md](production.md) describes the objects it maintains; [deployment.md](deployment.md) the host it runs on.
 
@@ -20,14 +20,14 @@ The timer starts `srascout-update.service` every Sunday at 02:00 local time (plu
 
 | Step | Reads | Changes | Typical time |
 | --- | --- | --- | --- |
-| [`download`](#download) | S3 bucket `sra-pub-metadata-us-east-1`, NCBI FTP | Files only: `data/sra_metadata/<snapshot>/*.parquet`, `Automations/ENA/bioproject.xml` | 1–2 hours at this host's bandwidth (13 GB + 4 GB); minutes when nothing changed |
+| [`download`](#download) | S3 bucket `sra-pub-metadata-us-east-1`, NCBI FTP | Files only: `data/sra_metadata/<snapshot>/*.parquet`, `Automations/ENA/bioproject.xml` | 1–2 hours at this host's bandwidth (13 GB + 4 GB), every run: the files are deleted at the end |
 | [`runs`](#runs) | the parquet snapshot, `sra_metadata` | `sra_metadata`: inserts | one pass over the 13 GB snapshot |
 | [`attributes`](#attributes) | the snapshot's `jattr` column | `bioproject_attributes`: inserts and updates; `bioproject_attributes_coverage`: its 14 rows | 30–60 minutes |
 | [`projects`](#projects) | `sra_metadata`, `bioproject.xml`, `bioprojects` | `bioprojects`: inserts and updates | one pass over the 4 GB XML |
 | [`refresh`](#refresh) | the rules in `value_normalizations` | renamed values, the three materialized views, `bioprojects.release_date` | minutes |
 | [`embeddings`](#embeddings) | `bioprojects`, `bioproject_embeddings` | `bioproject_embeddings`: inserts and updates | 10–20 projects/s on 4 threads |
 | [`tags`](#tags) | `bioprojects`, `bioproject_embeddings`, `bioproject_tags` | `bioproject_tags`: inserts and updates | 5–8 projects/s with 2 workers |
-| [`finish`](#finish) | — | `bioproject_fulltext` refreshed, API restarted, old snapshots removed | a minute |
+| [`finish`](#finish) | — | `bioproject_fulltext` refreshed, API restarted, downloads deleted | a minute |
 
 A normal week (100–300k new runs, a few thousand new projects) takes a few hours, most of it downloading. The [first run](#the-first-run) is longer.
 
@@ -35,12 +35,12 @@ The pipeline runs at `nice 10` with best-effort I/O priority, so the website and
 
 ## The steps
 
-Each step is a module in `steps/` with a `run(ctx)` function that returns the counts printed in the log and saved in `state/last_run.json`. Every step is idempotent: running it again on the same input finds nothing new and changes nothing, so a failed run is resumed by rerunning from the failed step ([Resuming](#resuming-a-failed-run)).
+Each step is a module in `steps/` with a `run(ctx)` function that returns the counts printed in the log and saved in `state/last_run.json`. Every step is idempotent: running it again on the same input finds nothing new and changes nothing (except the tags step, which tags the next backfill slice each time it runs), so a failed run is resumed by rerunning from the failed step ([Resuming](#resuming-a-failed-run)).
 
 ### `download`
 
 1. **The SRA snapshot.** The bucket holds a full daily copy of SRA's run metadata as about 30 parquet objects (13 GB, ~44.6 million rows), all named after the snapshot date (`20261104_...`). The step downloads the objects whose local file is missing or has another size, six at a time (one stream alone gets only a few MB/s here; parallel files add up), each to `<name>.parquet.part` and then renamed, with three attempts per file. When every file has the listed size it writes the `COMPLETE` marker (the object list, sizes and a timestamp) into the snapshot folder. A folder with a matching marker is skipped ("already complete"). If the bucket can't be listed but a complete snapshot exists locally, the run continues with that one and logs a warning.
-2. **`bioproject.xml`** (4.2 GB) through `Automations/ENA/get_ENA_xml.sh`, which uses `wget -N`: an unchanged file is not downloaded again. A partial file is never resumed: NCBI rewrites the dump every day, and resuming could join the halves of two different dumps into a file that still looks complete, so the script deletes any file that doesn't end with `</PackageSet>` and fetches the dump whole again (`wget` retries a dropped connection within the run). The file must end up over 1 GB and end with `</PackageSet>`; if the download fails but the previous complete file is still there, the run continues with it.
+2. **`bioproject.xml`** (4.2 GB) through `Automations/ENA/get_ENA_xml.sh`. The script compares the server's `Last-Modified` with the local file, so an unchanged dump is not downloaded again; a new dump is fetched whole into `bioproject.xml.new` and moved over the old file only when it ends with `</PackageSet>`, so a failed transfer leaves last week's complete file in place and the run continues with it (logged as a warning). A partial file is never resumed: NCBI rewrites the dump every day, and resuming could join the halves of two different dumps into a file that still looks complete. The projects step refuses an incomplete file.
 
 Result: `snapshot`, `parquet_files`, `downloaded`, `xml_bytes`, `xml_mtime`.
 
@@ -95,9 +95,9 @@ Result: `rules_applied`, `views_refreshed`, `release_date_updates`.
 
 1. `bioproject_fulltext` is refreshed once more, because tag words feed it and the tags were made after the refresh step; `bioproject_embeddings`, `bioproject_tags` and the view are `ANALYZE`d.
 2. **The API is restarted** (`systemctl restart srascout-api`; `AUTO_UPDATE_RESTART_API=false` turns it off). See [How the website picks up the changes](#how-the-website-picks-up-the-changes).
-3. Old snapshot folders are removed from `data/sra_metadata/`: each is 13 GB, and only the newest complete one (`AUTO_UPDATE_KEEP_SNAPSHOTS`) and the one this run used are kept. Leftover `.part` files of kept snapshots go too; an incomplete folder newer than the kept ones stays, since the next run resumes it.
+3. **The downloads are deleted**: every snapshot folder under `data/sra_metadata/` (13–15 GB each) and `Automations/ENA/bioproject.xml` (4 GB). NCBI rewrites both every day, so once their rows are in the database nothing on disk is worth keeping, and the host's disk (about 200 GB) is the constraint. Only a run that loaded them deletes them: the snapshot goes when the `runs` and `attributes` steps ran in this invocation, the XML when the `projects` step did, so `--only finish` or `--from refresh` after a failure leaves the files for the rerun. `AUTO_UPDATE_KEEP_DOWNLOADS=true` keeps them instead; then the newest complete snapshot(s) (`AUTO_UPDATE_KEEP_SNAPSHOTS`) and the one this run used stay, leftover `.part` files go, and the XML is kept for `wget -N`.
 
-Result: `views_refreshed`, `api_restarted`, `snapshots_removed`.
+Result: `views_refreshed`, `api_restarted`, `snapshots_removed`, `xml_removed`.
 
 ## What is never done
 
@@ -113,9 +113,10 @@ All under `Automations/Auto_update/` and gitignored:
 
 | Folder | Holds | Cleaned up |
 | --- | --- | --- |
-| `data/sra_metadata/<snapshot>/` | the snapshot's parquet files and its `COMPLETE` marker | by the finish step (older snapshots) |
+| `data/sra_metadata/<snapshot>/` | the snapshot's parquet files and its `COMPLETE` marker | by the finish step, after a successful run; a failed run keeps it for `--from` |
+| `Automations/ENA/bioproject.xml` | the BioProject dump (not under `Auto_update/`, but downloaded by it) | by the finish step, after a successful run |
 | `data/output/` | `bioproject_attributes.tsv`, `bioproject_attributes_coverage.tsv` of the last attributes step | overwritten each run |
-| `work/` | `embed_input.csv`, `embed_output.tsv` (+ `.progress`), `tag_input.csv`, `tag_embeddings.tsv`, `tag_output.tsv` | by the step, after its upsert is committed; files of an interrupted run stay so it can resume |
+| `work/` | `embed_input.csv`, `embed_output.tsv` (+ `.progress`), `tag_input.csv`, `tag_embeddings.tsv`, `tag_output.tsv` | by the step, after its upsert is committed; the output of an interrupted run stays and is loaded by the next run |
 | `state/` | `pending_reembed.txt`, `pending_retag.txt` (one accession per line, written by the projects step, removed by the step that consumed them), `last_run.json`, `update.lock` | — |
 | `logs/` | `update-<run id>.log`, one per run; the same lines go to journald under systemd | not cleaned; delete old ones by hand |
 
@@ -147,7 +148,7 @@ cd /root/sra_explorer/Automations/Auto_update
 | `--snapshot NAME` | use `data/sra_metadata/NAME` instead of the newest complete snapshot (the download step then keeps it even if the bucket holds a newer one) |
 | `--list` | print the steps and the selection, then exit |
 
-Exit codes: 0 ok, 1 a step failed, 2 bad arguments, 3 another run holds the lock.
+Exit codes: 0 ok, 1 a step failed, 2 bad arguments, 3 another run holds the lock, 130 interrupted (Ctrl-C or `systemctl stop`).
 
 A test against the test database, on one parquet file, without touching anything:
 
@@ -164,9 +165,9 @@ The service runs the same `update.py`, so a run started by hand and the timer's 
 systemctl list-timers srascout-update.timer        # next and last run
 systemctl status srascout-update.service           # running? last result
 journalctl -u srascout-update -f                   # follow a run
-journalctl -u srascout-update --since "last sunday" # last week's run
+journalctl -u srascout-update --since "1 week ago" # last week's run
 systemctl start srascout-update.service            # run now, in the background (the full pipeline)
-systemctl stop srascout-update.service             # interrupt a run; rerun with --from later
+systemctl stop srascout-update.service             # interrupt a run (status "interrupted" in last_run.json); rerun with --from later
 systemctl disable --now srascout-update.timer      # pause the weekly runs
 ```
 
@@ -184,7 +185,8 @@ Settings come from the environment first, then `Automations/Auto_update/.env` (o
 | `AUTO_UPDATE_TAG_WORKERS` | 2 | GLiNER worker processes, about 3 GB of RAM each |
 | `AUTO_UPDATE_TAG_THREADS` | 2 | Torch threads per GLiNER worker |
 | `AUTO_UPDATE_TAG_BACKFILL` | 20000 | Untagged old projects tagged per run, besides the new and changed ones. 0 turns the backfill off |
-| `AUTO_UPDATE_KEEP_SNAPSHOTS` | 1 | Complete snapshots kept on disk after a run (13 GB each) |
+| `AUTO_UPDATE_KEEP_DOWNLOADS` | false | Keep the snapshot and `bioproject.xml` after a successful run instead of deleting them (about 18 GB) |
+| `AUTO_UPDATE_KEEP_SNAPSHOTS` | 1 | With `AUTO_UPDATE_KEEP_DOWNLOADS`: complete snapshots kept on disk (13 GB each) |
 | `AUTO_UPDATE_RESTART_API` | true | Restart the API at the end |
 | `AUTO_UPDATE_API_SERVICE` | `srascout-api` | The systemd service to restart |
 | `AUTO_UPDATE_DOWNLOAD_CONCURRENCY` | 6 | Parquet files downloaded at once |
@@ -194,7 +196,7 @@ Example `Automations/Auto_update/.env`:
 
 ```
 AUTO_UPDATE_TAG_BACKFILL=40000
-AUTO_UPDATE_KEEP_SNAPSHOTS=2
+AUTO_UPDATE_KEEP_DOWNLOADS=true
 ```
 
 ## The first run
@@ -210,6 +212,8 @@ The database was loaded from a May 2026 export, so the first run catches up on h
 | `embeddings` | about 84,000 projects: those without an embedding plus those whose text changed | 1–2.5 hours at 10–20 projects/s |
 | `tags` | the new and changed projects, plus the 20,000 backfill | an hour and more at 5–8 projects/s |
 
+**Disk:** a run needs about 18 GB free for the downloads (13–15 GB snapshot, 4 GB XML) plus a few hundred MB of work files; all of it is deleted by the finish step once the data is in the database, so nothing accumulates between weeks. If a run fails, the files stay until the rerun finishes (or until the next successful run's finish step, which removes every snapshot folder).
+
 Expect a day rather than hours. Later runs embed and tag only the week's new projects plus the backfill slice, so the untagged backlog (hundreds of thousands of projects) shrinks by 20,000 a week; raise `AUTO_UPDATE_TAG_BACKFILL` to work it off faster, at the cost of longer runs.
 
 Before the first scheduled run it is worth a dry run of everything (`update.py --dry-run`, after a complete download exists) and reading its counts in the log.
@@ -219,7 +223,7 @@ Before the first scheduled run it is worth a dry run of everything (`update.py -
 | Change | Seen by the site when |
 | --- | --- |
 | New runs, projects, attributes, `release_date` | the refresh step has refreshed `study_facets`, `bioproject_attribute_values` and `bioproject_fulltext`; before that, searches still answer from the old view contents (the refreshes are concurrent) |
-| Renamed values (normalisation rules) | the refresh step; `normalize apply` also clears the API's cached filter values |
+| Renamed values (normalisation rules) | the refresh step, then within an hour (the API caches filter values) or at once after the API restart |
 | New embeddings | at once: semantic search queries the table and the HNSW index directly |
 | New tags | the finish step's second `bioproject_fulltext` refresh (full-text search) and the API restart (the Tags type-ahead list is built hourly) |
 | Home page counts, statistics page | the API restart: both are computed at startup and cached for a week ([running.md](running.md#search-api)) |
@@ -240,21 +244,21 @@ What resuming looks like per step:
 
 | Step | After a crash |
 | --- | --- |
-| `download` | finished parquet files are kept, `.part` files are discarded, only the missing files are fetched; an incomplete `bioproject.xml` is deleted and downloaded again whole |
+| `download` | finished parquet files are kept, `.part` files are discarded, only the missing files are fetched; a partial `bioproject.xml.new` is discarded and the dump downloaded again whole (the previous complete file is untouched) |
 | `runs`, `attributes`, `projects` | nothing was committed; the rerun repeats the step from the start (the same input gives the same result) |
 | `refresh` | repeats; every part is idempotent |
-| `embeddings` | the script's checkpoint is honoured: when `work/embed_input.csv` and its progress file still cover the same targets, embedding continues where it stopped |
-| `tags` | `extract_tags.py` skips the projects already in `work/tag_output.tsv` and continues |
+| `embeddings` | the finished chunks in `work/embed_output.tsv` are upserted first ("recovered N embeddings"), then the step starts again with a fresh target list, which no longer contains them |
+| `tags` | the projects already in `work/tag_output.tsv` are upserted first ("recovered N tagged bioprojects"), then the step starts again with a fresh target list |
 | `finish` | repeats |
 
-Rerunning the whole pipeline instead of `--from` is also safe, only slower: each step finds its work already done (0 new runs, 0 changed projects, "already complete" snapshot) and moves on.
+Rerunning the whole pipeline instead of `--from` is also safe, only slower: each step finds its work already done (0 new runs, 0 changed projects) and moves on, except that the tags step tags another backfill slice and the finish step restarts the API again. After a successful run the downloads are gone, so a full rerun downloads the 18 GB again; `--from` is the cheap way to finish a failed run.
 
 ## Troubleshooting
 
 - **`another update is running (pid ...)`, exit code 3.** The lock in `state/update.lock` is held by a live process (a timer run, or one started by hand). Wait for it, or `systemctl stop srascout-update.service`. The lock is released by the kernel when the process dies, so a crashed run never leaves it stale.
 - **`no complete snapshot under data/sra_metadata`** from a step other than `download`: the download didn't finish (no `COMPLETE` marker). Run `update.py --only download`, or point at a folder with `--snapshot NAME` for a test. A folder without the marker is never picked up automatically.
 - **`parquet files have the wrong size after downloading`**: an object changed under the download (every object in the bucket is replaced each day, and a run that overlaps the replacement can see two days). Rerun the download step; it fetches only the files that differ.
-- **`bioproject.xml is missing, smaller than 1 GB or truncated`**: the FTP download was interrupted and no previous complete file exists. Rerun `--from download`: the script deletes the incomplete file and downloads the dump again from the start (a partial file is never resumed, so two daily dumps never get mixed).
+- **`bioproject.xml is missing, smaller than 1 GB or truncated`**: no complete file exists (the first download was interrupted). Rerun `--from download`: the dump is downloaded again from the start (a partial file is never resumed, so two daily dumps never get mixed).
 - **The tags step dies without a Python error** (a worker was killed): out of memory. Set `AUTO_UPDATE_TAG_WORKERS=1` in `.env` and rerun `--from tags`; the finished part of the output is kept.
 - **`normalize apply` failed** in the refresh step: see the lines prefixed `|` in the log (the backend's own output); it fails only when a view can't be refreshed. Fix and rerun `--from refresh`.
 - **Only some of the week's work is wanted**, for example tags after a config change: `--only tags`. The pending queues are consumed by the step that handles them whichever way it was started.

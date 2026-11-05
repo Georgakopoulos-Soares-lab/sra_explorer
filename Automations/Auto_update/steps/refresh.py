@@ -159,13 +159,24 @@ def update_release_dates(ctx: common.Context) -> int:
                 n = common.scalar(conn, RELEASE_DATE_PENDING)
                 ctx.log.info("dry run: would update release_date on %s rows", f"{n:,}")
             return n
+        # The column and index exist on production; they are created only on a
+        # fresh database, in their own transactions. Running the ALTER (even
+        # IF NOT EXISTS) inside the UPDATE's transaction would hold an ACCESS
+        # EXCLUSIVE lock on bioprojects for the whole update and block every
+        # search meanwhile.
+        if "release_date" not in common.table_columns(conn, "bioprojects"):
+            with conn.cursor() as cur:
+                cur.execute("ALTER TABLE bioprojects ADD COLUMN release_date date")
+            conn.commit()
         with conn.cursor() as cur:
-            cur.execute("ALTER TABLE bioprojects ADD COLUMN IF NOT EXISTS release_date date")
             with ctx.timed("release_date update"):
                 cur.execute(RELEASE_DATE_UPDATE)
                 n = cur.rowcount
-            cur.execute(RELEASE_DATE_INDEX)
         conn.commit()
+        if not common.relation_exists(conn, "bioprojects_release_date_idx"):
+            with conn.cursor() as cur:
+                cur.execute(RELEASE_DATE_INDEX)
+            conn.commit()
     ctx.log.info("release_date: %s rows updated", f"{n:,}")
     return n
 

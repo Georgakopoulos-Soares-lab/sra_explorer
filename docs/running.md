@@ -116,7 +116,7 @@ Backend environment variables:
 | API    | `/docs/api` | How to use the public API, with Python examples                  |
 | Normalise | `/admin/normalize` | Admin only, not in the menu: rename filter values across the database, kept as rules for future data loads ([normalization.md](normalization.md)) |
 
-The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Search** to search all projects. Changes you haven't applied yet are flagged above the button. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results. [filters.md](filters.md) describes every filter, how they combine and narrow each other, and the rows above the results.
+The search page opens with the 100 most recently released BioProjects, which loads quickly. Choose filters and click **Apply filters** at the top of the filter panel to search all projects; filter changes you haven't applied yet are flagged next to the button. The **Search** button next to the text box runs the typed text and also applies any pending filter changes; it has its own pending dot. Removing a filter chip above the table applies straight away. Click a table row to see the project's description and details. Column headers sort the results. [filters.md](filters.md) describes every filter, how they combine and narrow each other, and the rows above the results.
 
 The applied search is kept in the URL (e.g. `/search?supergroup=Bacteria&has_publications=true`), so it can be bookmarked or shared, and the back button returns to the previous search.
 

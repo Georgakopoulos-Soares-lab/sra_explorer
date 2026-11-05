@@ -122,7 +122,8 @@ class Config:
     tag_workers: int = 2        # GLiNER worker processes (~3 GB RAM each)
     tag_threads: int = 2        # torch threads per GLiNER worker
     tag_backfill: int = 20000   # untagged old projects tagged per run, besides new/changed ones
-    keep_snapshots: int = 1     # downloaded S3 snapshots kept after a successful run
+    keep_downloads: bool = False  # keep the S3 snapshot and bioproject.xml after a successful run
+    keep_snapshots: int = 1     # with keep_downloads: complete S3 snapshots kept on disk
     restart_api: bool = True    # systemctl restart srascout-api at the end
     api_service: str = "srascout-api"
     hf_home: str = "/root/.cache/huggingface"
@@ -154,6 +155,7 @@ class Config:
             tag_workers=num("AUTO_UPDATE_TAG_WORKERS", 2),
             tag_threads=num("AUTO_UPDATE_TAG_THREADS", 2),
             tag_backfill=num("AUTO_UPDATE_TAG_BACKFILL", 20000),
+            keep_downloads=flag("AUTO_UPDATE_KEEP_DOWNLOADS", False),
             keep_snapshots=num("AUTO_UPDATE_KEEP_SNAPSHOTS", 1),
             restart_api=flag("AUTO_UPDATE_RESTART_API", True),
             api_service=_env("AUTO_UPDATE_API_SERVICE", "srascout-api", files),
@@ -219,6 +221,11 @@ class Context:
             cur.execute("SET maintenance_work_mem = '1GB'")
             cur.execute("SET statement_timeout = 0")
             cur.execute("SET lock_timeout = 0")
+            # No parallel query: with this work_mem a parallel hash join builds
+            # its table in /dev/shm, which is 64 MB in the Postgres container
+            # (Docker's default) and fails with "could not resize shared memory
+            # segment". Single-process plans use private memory.
+            cur.execute("SET max_parallel_workers_per_gather = 0")
         if not autocommit:
             conn.commit()
         return conn

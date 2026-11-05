@@ -9,11 +9,16 @@
      filter values and statistics for up to an hour and checks only once a
      minute which views exist, so a restart is how the site shows the new
      week at once. systemd restarts the two uvicorn workers in seconds.
-  3. Old S3 snapshots are removed from data/sra_metadata/: each one is 13 GB,
-     and only the newest complete ones (AUTO_UPDATE_KEEP_SNAPSHOTS, default 1)
-     and the snapshot this run used are kept. Half-downloaded files of kept
-     snapshots are removed too. Folders newer than the kept ones are left
-     alone even when incomplete, so the download step can resume them.
+  3. The downloads are removed: every snapshot folder under data/sra_metadata/
+     (13-15 GB each) and Automations/ENA/bioproject.xml (4 GB). Both are
+     rewritten by NCBI every day, so nothing on disk is worth keeping once
+     its rows are in the database, and the host's disk is the constraint.
+     Only a run that actually loaded them deletes them: the snapshot goes
+     when the runs and attributes steps ran in this invocation, the XML when
+     the projects step did, so `--only finish` or `--from refresh` after a
+     failure leaves the files for the rerun. AUTO_UPDATE_KEEP_DOWNLOADS=true
+     keeps them instead (then the AUTO_UPDATE_KEEP_SNAPSHOTS newest complete
+     snapshots and the current one stay, as before).
 
 Nothing here deletes database rows. Everything is idempotent.
 """
@@ -38,8 +43,75 @@ def run(ctx: common.Context) -> dict:
     refreshed = refresh_fulltext(ctx)
     analyze_relations(ctx, ANALYZE_RELATIONS)
     restarted = restart_api(ctx)
-    removed = remove_old_snapshots(ctx)
-    return {"views_refreshed": refreshed, "api_restarted": restarted, "snapshots_removed": removed}
+    removed = remove_downloads(ctx)
+    return {"views_refreshed": refreshed, "api_restarted": restarted,
+            "snapshots_removed": removed["snapshots"], "xml_removed": removed["xml"]}
+
+
+def remove_downloads(ctx: common.Context) -> dict:
+    """Frees the disk once this run's data is in the database.
+
+    Returns {"snapshots": [folder names removed], "xml": whether bioproject.xml
+    was removed}. With AUTO_UPDATE_KEEP_DOWNLOADS the old policy applies
+    (remove_old_snapshots; the XML stays). Otherwise everything downloaded is
+    deleted, but only by a run that consumed it: ctx.results lists the steps
+    that finished in this invocation, so a partial rerun (--only finish,
+    --from refresh) keeps the files the next --from run still needs.
+    """
+    if ctx.config.keep_downloads:
+        ctx.log.info("AUTO_UPDATE_KEEP_DOWNLOADS is on: keeping bioproject.xml and the newest snapshot(s)")
+        return {"snapshots": remove_old_snapshots(ctx), "xml": False}
+    done = set(ctx.results)
+    snapshots: list[str] = []
+    if {"runs", "attributes"} <= done:
+        snapshots = remove_all_snapshots(ctx)
+    else:
+        ctx.log.info("snapshot folders kept: the runs and attributes steps did not run in this invocation")
+    xml = False
+    if "projects" in done:
+        xml = remove_xml(ctx)
+    else:
+        ctx.log.info("bioproject.xml kept: the projects step did not run in this invocation")
+    return {"snapshots": snapshots, "xml": xml}
+
+
+def remove_all_snapshots(ctx: common.Context) -> list[str]:
+    """Deletes every snapshot folder (complete or not); returns their names.
+    The lock guarantees no download is in progress, and the next run lists the
+    bucket again anyway, since the objects are replaced daily."""
+    removed = []
+    for folder in sorted(p for p in common.SNAPSHOTS_DIR.glob("*") if p.is_dir()):
+        if not SNAPSHOT_NAME.match(folder.name):
+            ctx.log.warning("not a snapshot folder, left alone: %s", folder)
+            continue
+        size = sum(f.stat().st_size for f in folder.rglob("*") if f.is_file())
+        if ctx.options.dry_run:
+            ctx.log.info("dry run: would remove snapshot folder %s (%.1f GB)", folder, size / 1e9)
+            continue
+        with ctx.timed(f"remove snapshot {folder.name} ({size / 1e9:.1f} GB)"):
+            shutil.rmtree(folder)
+        removed.append(folder.name)
+    ctx.log.info("snapshots removed: %s", ", ".join(removed) or "none")
+    return removed
+
+
+def remove_xml(ctx: common.Context) -> bool:
+    """Deletes Automations/ENA/bioproject.xml and any leftover partial file
+    next to it (bioproject.xml.new, .part); returns whether the XML was removed."""
+    xml = common.ENA_XML
+    candidates = [xml] + sorted(p for p in xml.parent.glob(xml.name + ".*") if p.is_file())
+    removed = False
+    for path in candidates:
+        if not path.exists():
+            continue
+        size = path.stat().st_size
+        if ctx.options.dry_run:
+            ctx.log.info("dry run: would remove %s (%.2f GB)", path, size / 1e9)
+            continue
+        path.unlink()
+        ctx.log.info("removed %s (%.2f GB)", path, size / 1e9)
+        removed = removed or path == xml
+    return removed
 
 
 def refresh_fulltext(ctx: common.Context) -> list[str]:
@@ -107,6 +179,11 @@ def remove_old_snapshots(ctx: common.Context) -> list[str]:
         current = None  # no snapshot at all (e.g. --only finish before any download)
     removed = []
     oldest_kept = min(keep) if keep else None
+    if not complete or oldest_kept is None:
+        # Nothing complete to keep means the only folders are downloads in
+        # progress (e.g. before the first run finished): leave them alone.
+        ctx.log.info("no complete snapshot on disk; removing nothing")
+        return removed
     for folder in folders:
         if folder.name in keep or (oldest_kept is not None and folder.name > oldest_kept):
             continue

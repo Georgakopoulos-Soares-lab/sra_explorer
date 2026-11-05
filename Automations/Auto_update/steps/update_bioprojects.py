@@ -135,8 +135,9 @@ def parse_xml(ctx: common.Context, wanted: set[str]) -> tuple[dict[str, dict], i
     if not XML_PATH.is_file() or XML_PATH.stat().st_size == 0:
         raise FileNotFoundError(f"{XML_PATH} is missing or empty; run the download step first")
     if not xml_looks_complete(XML_PATH):
-        ctx.log.warning("%s does not end with </PackageSet>: it looks truncated, projects after the "
-                        "cut keep their current metadata", XML_PATH)
+        # iterparse(recover=True) would still emit the package cut in half as
+        # a row of NULLs and the update would overwrite that project with it.
+        raise RuntimeError(f"{XML_PATH} does not end with </PackageSet>: incomplete download; rerun --from download")
     ctx.log.info("parsing %s (%.1f GB) for %s projects", XML_PATH, XML_PATH.stat().st_size / 1e9, f"{len(wanted):,}")
     info: dict[str, dict] = {}
     failed = 0
@@ -254,6 +255,9 @@ def run(ctx: common.Context) -> dict:
         with ctx.timed("reading (bioproject, sra_study) pairs"):
             pairs = read_pairs(conn)
             existing = read_existing(conn)
+        # End the read transaction now: the XML parse takes a while, and an
+        # idle transaction would keep its locks on the tables all that time.
+        conn.commit()
         new_pairs = sorted(k for k in pairs if k not in existing)
         if ctx.options.limit is not None:
             new_pairs = new_pairs[: ctx.options.limit]
@@ -286,19 +290,19 @@ def run(ctx: common.Context) -> dict:
                 conn.rollback()
                 ctx.log.info("dry run: would update %s rows' metadata, %s counts and insert %s pairs "
                              "(rolled back, nothing written)", f"{metadata_updates:,}", f"{count_updates:,}", f"{inserted:,}")
+                ctx.log.info("dry run: would queue %d projects to re-embed and %d to re-tag",
+                             len(text_changed), len(set(text_changed) | set(new_projects)))
             else:
+                # Hand the stale/new projects to the embeddings and tags steps
+                # before the commit: if the commit then fails, the queue only
+                # holds extra work those steps redo harmlessly, whereas queuing
+                # after a commit that was followed by a crash would lose the
+                # changed-text projects for good (their rows already match the XML).
+                ctx.pending_add("reembed", text_changed)
+                ctx.pending_add("retag", sorted(set(text_changed) | set(new_projects)))
                 conn.commit()
                 ctx.log.info("updated %s rows' metadata, %s counts; inserted %s pairs",
                              f"{metadata_updates:,}", f"{count_updates:,}", f"{inserted:,}")
-
-    # Hand the stale/new projects to the embeddings and tags steps (after the
-    # commit, so a failed transaction queues nothing).
-    if dry_run:
-        ctx.log.info("dry run: would queue %d projects to re-embed and %d to re-tag",
-                     len(text_changed), len(set(text_changed) | set(new_projects)))
-    else:
-        ctx.pending_add("reembed", text_changed)
-        ctx.pending_add("retag", sorted(set(text_changed) | set(new_projects)))
 
     return {
         "pairs": n_pairs,
