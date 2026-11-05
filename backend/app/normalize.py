@@ -36,7 +36,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from . import search, statistics
+from . import search, statistics, tags
 from .database import engine
 
 logger = logging.getLogger(__name__)
@@ -282,6 +282,7 @@ def _after_change(views: list[str]) -> dict:
     finally:
         search.clear_value_caches()
         statistics.mark_stale()
+        tags.mark_stale()
     return {"refreshed": refreshed, "refresh_failed": failed}
 
 

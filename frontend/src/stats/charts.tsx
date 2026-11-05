@@ -60,12 +60,15 @@ function barPath(x: number, y: number, w: number, base: number) {
 const MARGIN = { top: 12, right: 20, bottom: 26, left: 52 }
 
 // Columns per year. `partial` marks the last column as an incomplete year.
-export function ColumnChart({ data, format, unit, partial, height = 260 }: {
+export function ColumnChart({ data, format, unit, partial, height = 260, xLabel = 'year', formatX }: {
   data: { x: number; y: number }[]
   format: (n: number) => string
   unit: string
   partial?: { x: number; note: string }
   height?: number
+  // What x is (for the chart's accessible name) and how to show it in the tooltip.
+  xLabel?: string
+  formatX?: (x: number) => string
 }) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
@@ -85,7 +88,7 @@ export function ColumnChart({ data, format, unit, partial, height = 260 }: {
   return (
     <div ref={ref} className="relative" onMouseLeave={() => setHover(null)}>
       {width > 0 && (
-        <svg width={width} height={height} role="img" aria-label={`Column chart of ${unit} per year`}>
+        <svg width={width} height={height} role="img" aria-label={`Column chart of ${unit} per ${xLabel}`}>
           {ticks.map((t) => (
             <g key={t}>
               <line x1={MARGIN.left} x2={width - MARGIN.right} y1={yOf(t)} y2={yOf(t)} stroke={t === 0 ? BASELINE : GRID} />
@@ -125,7 +128,7 @@ export function ColumnChart({ data, format, unit, partial, height = 260 }: {
       )}
       {hovered && (
         <Tooltip x={MARGIN.left + (hover! + 0.5) * band} y={yOf(hovered.y) - 40} width={width}>
-          <div className="font-medium">{hovered.x}</div>
+          <div className="font-medium">{formatX ? formatX(hovered.x) : hovered.x}</div>
           <div className="tabular-nums">
             {format(hovered.y)} {unit}
           </div>
@@ -359,6 +362,113 @@ export function BarList({ items, format }: { items: BarItem[]; format: (n: numbe
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+// A symmetric matrix of the same labels on both axes (tag co-occurrence), one
+// hue, darker for larger values, with the row and column highlighted on hover.
+// Too narrow to draw (cells under MIN_CELL) it shows a note instead.
+const MIN_CELL = 11
+const LABEL_W = 132
+const LABEL_H = 110
+// Room for the rotated column labels of the last columns, which lean right.
+const RIGHT_PAD = 56
+
+export function HeatmapMatrix({ labels, value, max, format, onCell, onLabel }: {
+  labels: string[]
+  // The value of the cell at row i, column j; null where there is none.
+  value: (i: number, j: number) => number | null
+  max: number
+  format: (v: number, i: number, j: number) => ReactNode
+  onCell?: (i: number, j: number) => void
+  onLabel?: (i: number) => void
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>()
+  const [hover, setHover] = useState<[number, number] | null>(null)
+  const n = labels.length
+  const cell = n ? Math.floor((width - LABEL_W - RIGHT_PAD) / n) : 0
+  const fits = n >= 2 && cell >= MIN_CELL
+  const scale = max > 0 ? max : 1
+  const size = cell * n
+  const height = LABEL_H + size
+  const short = (s: string, chars: number) => (s.length > chars ? `${s.slice(0, chars - 1)}…` : s)
+  const hovered = hover ? value(hover[0], hover[1]) : null
+
+  return (
+    <div ref={ref} className="relative" onMouseLeave={() => setHover(null)}>
+      {width > 0 && !fits && (
+        <div className="py-6 text-center text-xs" style={{ color: MUTED }}>
+          {n < 2 ? 'No pairs to show.' : 'The matrix needs a wider window. The table view lists every pair.'}
+        </div>
+      )}
+      {width > 0 && fits && (
+        <svg width={width} height={height} role="img" aria-label="Matrix of projects shared by each pair of tags">
+          {labels.map((label, i) => {
+            const active = hover !== null && (hover[0] === i || hover[1] === i)
+            const style = { cursor: onLabel ? 'pointer' : undefined, fill: active ? INK : INK_2, fontWeight: active ? 600 : 400 }
+            return (
+              <g key={label}>
+                <text
+                  x={LABEL_W - 6}
+                  y={LABEL_H + i * cell + cell / 2}
+                  dy="0.32em"
+                  textAnchor="end"
+                  fontSize={11}
+                  style={style}
+                  onClick={() => onLabel?.(i)}
+                >
+                  <title>{label}</title>
+                  {short(label, 20)}
+                </text>
+                <text
+                  transform={`translate(${LABEL_W + i * cell + cell / 2}, ${LABEL_H - 6}) rotate(-60)`}
+                  fontSize={11}
+                  style={style}
+                  onClick={() => onLabel?.(i)}
+                >
+                  <title>{label}</title>
+                  {short(label, 18)}
+                </text>
+              </g>
+            )
+          })}
+          {hover && (
+            <>
+              <rect x={LABEL_W} y={LABEL_H + hover[0] * cell} width={size} height={cell} fill="rgba(0,0,0,0.05)" />
+              <rect x={LABEL_W + hover[1] * cell} y={LABEL_H} width={cell} height={size} fill="rgba(0,0,0,0.05)" />
+            </>
+          )}
+          {labels.map((_, i) =>
+            labels.map((__, j) => {
+              const v = i === j ? null : value(i, j)
+              return (
+                <rect
+                  key={`${i}-${j}`}
+                  x={LABEL_W + j * cell + 1}
+                  y={LABEL_H + i * cell + 1}
+                  width={cell - 2}
+                  height={cell - 2}
+                  rx={2}
+                  fill={v === null ? (i === j ? '#f0efe9' : '#f7f6f2') : SERIES_COLORS[0]}
+                  fillOpacity={v === null ? 1 : 0.15 + 0.85 * Math.sqrt(Math.min(v / scale, 1))}
+                  style={{ cursor: onCell && v !== null ? 'pointer' : undefined }}
+                  onMouseEnter={() => setHover([i, j])}
+                  onClick={() => v !== null && onCell?.(i, j)}
+                />
+              )
+            }),
+          )}
+        </svg>
+      )}
+      {hover && hovered !== null && (
+        <Tooltip x={LABEL_W + (hover[1] + 0.5) * cell} y={LABEL_H + hover[0] * cell - 10} width={width}>
+          <div className="font-medium">
+            {labels[hover[0]]} × {labels[hover[1]]}
+          </div>
+          {format(hovered, hover[0], hover[1])}
+        </Tooltip>
+      )}
     </div>
   )
 }

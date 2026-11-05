@@ -25,6 +25,8 @@ To page through many results, use `limit=100` and wait at least 5 seconds betwee
 | `GET /v1/projects/{accession}` | Look up a project by BioProject or SRA study accession |
 | `GET /v1/filters` | Every search parameter, with a description |
 | `GET /v1/filters/{name}` | The values of a list filter, with counts |
+| `GET /v1/tags/related` | Projects with given tags: how many, the tags most often found with them, their organisms and release years |
+| `GET /v1/tags/overview` | Tag statistics: coverage, the most common tags, tags per project, and the pairs of tags found together |
 | `GET /v1/projects/semantic?q=...` | Natural-language search. **Not available yet**: returns `501` |
 
 ### Search projects
@@ -89,6 +91,41 @@ GET /v1/filters/organism?q=homo&limit=10
 ```
 
 Values come most common first. Counts are projects for project filters and studies for run filters. Use `q` to keep only values containing some text.
+
+### Tags
+
+```
+GET /v1/tags/related?tag=liver&tag=mouse
+GET /v1/tags/related?tag=mouse&tag=Mus%20musculus&tag_any=true
+```
+
+What the projects with the given tags look like, the same numbers the website's tag explorer page (`/tags`) shows for them. `tag` is repeatable; a project must have all the tags, or at least one with `tag_any=true` (as in `/v1/projects`). At most 10 tags.
+
+```json
+{
+  "tags": ["liver", "mouse"], "tag_any": false,
+  "projects": 721,
+  "related": [
+    {"value": "Mus musculus", "count": 501, "total": 16823, "group": "organism", "organism": true},
+    {"value": "hepatocyte", "count": 133, "total": 519, "group": null, "organism": false}
+  ],
+  "organisms": [{"value": "Mus musculus", "count": 502}],
+  "organism_known": 538,
+  "years": [{"year": 2010, "count": 1}, {"year": 2025, "count": 277}]
+}
+```
+
+- `related`: the 30 tags most often on the matching projects, the given tags left out. `count` is how many of the matching projects have the tag and `total` how many tagged projects have it at all, so `(count / projects) / (total / tagged projects)` is the tag's lift among these projects. `group` is the tag's type when known; `organism` says whether the tag names an organism (a project's organism name or a common name such as `mouse`).
+- `organisms`: the projects' organism from BioProject (10 most common), and `organism_known` how many of the projects have one.
+- `years`: matching projects per release year.
+
+`projects` counts BioProjects. `/v1/projects` with the same tags returns one result per BioProject and SRA study pair, so its `total` can be slightly higher for tags whose projects have several studies.
+
+```
+GET /v1/tags/overview
+```
+
+Everything on the tag explorer page in one JSON, computed once a week (`generated_at`): `totals` (projects, tagged projects, distinct tags, occurrences, tags per project), `frequency` (tags on at least 1, 2, 10, 100 and 1,000 projects), `top` (the 300 most common tags with counts, types and the organism flag), `types` (occurrences per tag type; empty until tag types are stored), `tags_per_project`, `coverage_by_year` (all and tagged projects per release year), `by_year` (the 20 most common tags per year) and `network` (the 80 most common tags as `nodes`, and as `edges` every pair of them found on at least 20 projects, with that count). See [bioproject-tags.md](bioproject-tags.md#the-tag-explorer-page).
 
 ## Examples
 

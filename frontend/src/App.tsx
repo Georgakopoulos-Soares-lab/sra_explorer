@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage'
 import NormalizePage from './pages/NormalizePage'
 import SearchPage from './pages/SearchPage'
 import StatisticsPage from './pages/StatisticsPage'
+import TagsPage from './pages/TagsPage'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route index element={<HomePage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="files/:study" element={<FilesPage />} />
+          <Route path="tags" element={<TagsPage />} />
           <Route path="statistics" element={<StatisticsPage />} />
           {/* Not under /api…: the dev server (and likely a production proxy)
               forwards every path starting with /api to the backend. */}

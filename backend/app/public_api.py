@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.orm import Session
 
-from . import schemas
+from . import schemas, tags
 from .database import get_db
 from .rate_limit import WINDOW_SECONDS, rate_limit
 from .search import (
@@ -110,6 +110,8 @@ def api_info():
             "lookup": "/v1/projects/{accession}",
             "filters": "/v1/filters",
             "filter_values": "/v1/filters/{name}",
+            "tag_overview": "/v1/tags/overview",
+            "tag_related": "/v1/tags/related",
             "semantic_search": "/v1/projects/semantic (not available yet)",
         },
     }
@@ -190,6 +192,23 @@ def filter_values(
     needle = (q or "").strip().lower()
     matches = ({"value": v, "count": n} for v, n in distinct_values(name) if needle in v.lower())
     return [m for _, m in zip(range(limit), matches)]
+
+
+@router.get("/tags/overview", response_model=schemas.TagOverview, summary="Tag statistics")
+def tag_overview():
+    """The numbers on the tag explorer page (/tags): how many projects have
+    tags, the most common tags, tag types, tags per project, tagged projects
+    per release year, and which of the most common tags occur together.
+    Computed once a week."""
+    return tags.overview()
+
+
+@router.get("/tags/related", response_model=schemas.TagRelated, summary="Projects with given tags")
+def tag_related(query: Annotated[tags.RelatedQuery, Query()]):
+    """For one or more tags (`?tag=liver&tag=mouse`): how many projects have
+    all of them (or any, with `tag_any=true`), the tags most often found with
+    them, the projects' organisms and release years."""
+    return tags.related_tags(query)
 
 
 @docs_router.get("/public-api-docs", response_model=schemas.PublicApiDocs, include_in_schema=False)

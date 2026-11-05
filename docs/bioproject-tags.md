@@ -210,6 +210,25 @@ Only part of the projects have tags (171,671 of 670,720 on the development data,
 | Suggested tags | In the Tags row; `GET /search/tag-summary` | The 12 most frequent tags among the search's top 2,000 results (most relevant for a text search, otherwise in the chosen sort), each added with one click. Leaves out the organism, tags already chosen, and tags on only one project. Loaded after the results, so it never slows them. |
 | Full-text search | `backend/sql/bioproject_fulltext.sql` | Tags are added to each project's searchable text at the lowest weight (D). See [search.md](search.md#2-full-text-list). |
 
+## The tag explorer page
+
+The website's **Tags** page (`/tags`, `frontend/src/pages/TagsPage.tsx` and `frontend/src/tags/`) is built around the tags: what they cover, which are most common, which go together, and finding projects through them. Its numbers come from two endpoints in `backend/app/tags.py`, also published in the public API as `/v1/tags/overview` and `/v1/tags/related` ([api.md](api.md#tags)).
+
+| Section | What it shows | Data |
+| --- | --- | --- |
+| Find projects by tags | A type-ahead over all tags (`GET /search/suggest?field=tag`), all-of/any-of, the number of matching projects, a **Show in Search** button opening the same tags in the search page's Tags filter, the same query as a public API call, and example tag sets. For the chosen tags: the 30 tags most often found with them (**Most common**, or **Most characteristic** by lift: the tag's share among these projects over its share among all tagged projects, for tags on at least 20 of them), the projects' organisms (each linking to the search page with the tags and that organism), projects per release year, and the 10 most recently released matching projects with their tags. Clicking any tag on the page adds it here. The chosen tags are in the page URL (`/tags?tag=liver&tag=mouse&any=true`), so a view can be shared. | `GET /tags/related`, `GET /search/bioprojects` |
+| The tags in numbers | Tagged projects (and their share of all projects), distinct tags and occurrences, tags per project, tags on 10+/100+/1,000+ projects, projects whose tags have types | `GET /tags/overview` |
+| Most common tags | The top 30 or 100 tags as bars, without organism names by default (organism names flatten everything else), and by type once types are stored | overview `top` |
+| Tags that go together | Pairs among the 80 most common tags found on at least 20 projects, ranked by projects with both (**Most frequent**) or by the Jaccard index for pairs on at least 50 projects (**Most associated**), as a list or as a co-occurrence **matrix** of the 30 most common tags, rows ordered so that related tags sit together. Pairs of two organism names (mostly synonyms, `mouse` + `Mus musculus`) are hidden by default. Clicking a pair chooses both tags. | overview `network` |
+| Coverage | Tagged and all projects per release year, as a share or as counts: the honesty chart, since tagging works newest-first. The number of tags per project. The share of each year's tagged projects carrying each of the most common tags (years with under 2,000 tagged projects left out). | overview `coverage_by_year`, `tags_per_project`, `by_year` |
+| How tags are made | The four pipeline steps with the models and thresholds, a worked example (`PRJNA1100990`, read live from the database with its tag mentions marked in the text), the 11 entity types and which are kept, tag occurrences by type once types are stored, known limitations with live numbers, and the API calls | `GET /bioprojects/PRJNA1100990`, overview `types` |
+
+The workbench counts BioProjects; the search page it opens counts BioProject and SRA study pairs, so its total can be a few higher for tags whose projects have several studies. At most 10 tags can be combined (`RELATED_MAX_TAGS`).
+
+Every chart has a table view and a CSV download, and the whole overview can be downloaded as JSON. `/tags/overview` is computed in a background thread at startup (a few seconds: it unnests every project's tags and joins the top 80 tags with themselves) and cached for a week; the admin pages mark it stale after changing data. `/tags/related` answers in tens of milliseconds for most tags (the GIN index finds the projects) and under a second for the largest (`Mus musculus`, 16,823 projects); each tag set is cached for an hour.
+
+Organism names are told apart from other tags even where the tag types aren't stored: a tag is an organism when it equals a project's `organism_name` or is a common name (`mouse`, `bacteria`, `fungi`, ...; `COMMON_ORGANISM_WORDS` in `tags.py`). The page uses this to hide organism names from the most common tags and from the pairs, where they would otherwise dominate.
+
 ### Checks on the development data
 
 Text searches were compared before and after adding tags to the full-text text, for six queries (`osteoarthritis synovial fibroblasts`, `soil microbiome`, `BRCA1 mutations`, `mouse liver`, `hepatocellular carcinoma`, `Lotus japonicus`):

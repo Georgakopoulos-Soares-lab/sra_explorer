@@ -234,3 +234,59 @@ export interface ResolvedPublication {
   url: string
   source: 'pubmed' | 'crossref'
 }
+
+// The tag explorer page (GET /tags/overview and /tags/related; backend/app/tags.py).
+
+export interface TagCount {
+  value: string
+  count: number
+  // The tag's type (organism, disease, tissue, ...), when known.
+  group: string | null
+  // Whether the tag names an organism (a project's organism name or a common name), known even without types.
+  organism: boolean
+}
+
+export interface TagOverview {
+  generated_at: string
+  // Whether any project's tags have types.
+  has_labels: boolean
+  totals: {
+    projects: number
+    // Projects with at least one tag, projects the tagger found nothing in, and projects whose tags have types.
+    tagged: number
+    empty: number
+    labelled: number
+    distinct_tags: number
+    occurrences: number
+    tags_per_project_mean: number | null
+    tags_per_project_median: number | null
+  }
+  // How many tags are on at least 1, 2, 10, 100 and 1,000 projects.
+  frequency: { min_projects: number; tags: number }[]
+  // The most common tags (at most 300), most common first.
+  top: TagCount[]
+  // Tag occurrences and distinct tags per type; empty without types.
+  types: { value: string; count: number; distinct: number }[]
+  tags_per_project: { n: number; projects: number }[]
+  coverage_by_year: { year: number; projects: number; tagged: number }[]
+  // Counts per release year of the 20 most common tags.
+  by_year: { year: number; value: string; count: number }[]
+  // The most common tags (80) and the pairs among them with at least 20 shared projects.
+  network: {
+    nodes: TagCount[]
+    edges: { source: string; target: string; count: number }[]
+  }
+}
+
+export interface TagRelated {
+  tags: string[]
+  tag_any: boolean
+  // Projects with the tags.
+  projects: number
+  // The tags most often found with them (at most 30), with each tag's count over all tagged projects.
+  related: (TagCount & { total: number })[]
+  // The projects' organisms (at most 10), and how many have one recorded.
+  organisms: { value: string; count: number }[]
+  organism_known: number
+  years: { year: number; count: number }[]
+}

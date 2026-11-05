@@ -249,3 +249,98 @@ class ResolvedPublication(BaseModel):
     doi: Optional[str] = None
     url: str
     source: str  # "pubmed" or "crossref"
+
+
+# Tag explorer page (tags.py)
+
+
+class TagCount(BaseModel):
+    value: str
+    count: int
+    # The tag's type (organism, disease, tissue, ...), when known.
+    group: Optional[str] = None
+    # Whether the tag is a project's organism name (an organism even without a type).
+    organism: bool = False
+
+
+class TagTypeCount(BaseModel):
+    value: str
+    # Tag occurrences of this type, and distinct tags.
+    count: int
+    distinct: int
+
+
+class TagsPerProject(BaseModel):
+    n: int
+    projects: int
+
+
+class TagCoverageYear(BaseModel):
+    year: int
+    projects: int
+    tagged: int
+
+
+class TagFrequencyBand(BaseModel):
+    # Tags found on at least this many projects.
+    min_projects: int
+    tags: int
+
+
+class TagEdge(BaseModel):
+    source: str
+    target: str
+    # Projects with both tags.
+    count: int
+
+
+class TagNetwork(BaseModel):
+    nodes: list[TagCount]
+    edges: list[TagEdge]
+
+
+class TagTotals(BaseModel):
+    projects: int
+    # Projects with at least one tag, projects the tagger found nothing in,
+    # and projects whose tags have types.
+    tagged: int
+    empty: int
+    labelled: int
+    distinct_tags: int
+    occurrences: int
+    tags_per_project_mean: Optional[float] = None
+    tags_per_project_median: Optional[float] = None
+
+
+class TagOverview(BaseModel):
+    generated_at: str
+    has_labels: bool
+    totals: TagTotals
+    frequency: list[TagFrequencyBand]
+    # The most common tags (at most 300), most common first.
+    top: list[TagCount]
+    # Tag occurrences per type; empty without labels.
+    types: list[TagTypeCount]
+    tags_per_project: list[TagsPerProject]
+    coverage_by_year: list[TagCoverageYear]
+    # Counts per release year of the 20 most common tags.
+    by_year: list[YearValueCount]
+    network: TagNetwork
+
+
+class RelatedTagCount(TagCount):
+    # Projects with the tag over all tagged projects, for its lift among these.
+    total: int
+
+
+class TagRelated(BaseModel):
+    tags: list[str]
+    tag_any: bool
+    # Projects with the tags.
+    projects: int
+    # The tags most often found with them (at most 30), most common first.
+    related: list[RelatedTagCount]
+    # The projects' organisms (at most 10), and how many have one recorded.
+    organisms: list[CategoryCount]
+    organism_known: int
+    years: list[YearCount]

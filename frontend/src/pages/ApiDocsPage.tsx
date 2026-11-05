@@ -2,6 +2,7 @@ import { ClockCircleOutlined, ExportOutlined } from '@ant-design/icons'
 import { Alert, Anchor, Grid, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router'
 import { api, API_BASE_URL, type PublicApiDocs, type PublicApiFilter } from '../api'
 import CodeBlock from '../components/CodeBlock'
 
@@ -21,6 +22,8 @@ const SECTIONS = [
   { key: 'lookup', title: 'GET /v1/projects/{accession}', indent: true },
   { key: 'filters', title: 'GET /v1/filters', indent: true },
   { key: 'filter-values', title: 'GET /v1/filters/{name}', indent: true },
+  { key: 'tags-related', title: 'GET /v1/tags/related', indent: true },
+  { key: 'tags-overview', title: 'GET /v1/tags/overview', indent: true },
   { key: 'semantic', title: 'GET /v1/projects/semantic', indent: true },
   { key: 'parameters', title: 'Search parameters' },
   { key: 'errors', title: 'Errors' },
@@ -219,6 +222,8 @@ def get(url, params=None):
               { path: '/v1/projects/{accession}', purpose: 'Look up a project by BioProject or SRA study accession' },
               { path: '/v1/filters', purpose: 'Every search parameter, with a description' },
               { path: '/v1/filters/{name}', purpose: 'The values of a list filter, with counts' },
+              { path: '/v1/tags/related', purpose: 'Projects with given tags: how many, their other tags, organisms and years' },
+              { path: '/v1/tags/overview', purpose: 'Tag statistics: coverage, the most common tags and the pairs among them' },
               { path: '/v1/projects/semantic', purpose: 'Search by describing the data (not available yet)' },
             ]}
             columns={[
@@ -407,6 +412,65 @@ else:
 platforms = requests.get("${BASE}/filters/platform").json()
 for item in platforms[:5]:
     print(f'{item["value"]}: {item["count"]:,} studies')`}
+            />
+          </Section>
+
+          <Section id="tags-related" level={3} title={<Route path="/v1/tags/related" />}>
+            <Paragraph>
+              What the projects with one or more tags look like: how many there are, the tags most often found with
+              them, their organisms and their release years. The same numbers as the <Link to="/tags">tag explorer</Link>{' '}
+              shows for the chosen tags. At most 10 tags; <Text code>related</Text> lists at most 30 tags. Each related tag
+              comes with its <Text code>total</Text> over all tagged projects,
+              so you can compute how characteristic it is of these (<Text code>count / projects</Text> against{' '}
+              <Text code>total / tagged projects</Text>).
+            </Paragraph>
+            <Params
+              rows={[
+                { name: 'tag', type: 'Text, repeatable', description: 'Required. A tag word, exactly as spelled (see /v1/filters/tag?q=...). Repeat for several; a project must have all of them.' },
+                { name: 'tag_any', type: 'true / false', description: 'true: projects with at least one of the tags instead of all. Default false.' },
+              ]}
+            />
+            <Request path="/tags/related?tag=liver&tag=mouse" />
+            <CodeBlock
+              language="json"
+              code={`{
+  "tags": ["liver", "mouse"], "tag_any": false,
+  "projects": 721,
+  "related": [
+    {"value": "Mus musculus", "count": 501, "total": 16823, "group": "organism", "organism": true},
+    {"value": "hepatocyte", "count": 133, "total": 519, "group": null, "organism": false},
+    "..."
+  ],
+  "organisms": [{"value": "Mus musculus", "count": 502}, "..."],
+  "organism_known": 538,
+  "years": [{"year": 2010, "count": 1}, "...", {"year": 2025, "count": 277}]
+}`}
+            />
+          </Section>
+
+          <Section id="tags-overview" level={3} title={<Route path="/v1/tags/overview" />}>
+            <Paragraph>
+              Every number on the <Link to="/tags">tag explorer</Link> page: how many projects have tags, the 300 most
+              common tags with their project counts and types, tag occurrences per type, the number of tags per project,
+              tagged and all projects per release year, the 20 most common tags per year, and the pairs among the 80 most
+              common tags that are found together on at least 20 projects, with that number (<Text code>network.edges</Text>).
+              Computed once a
+              week; <Text code>generated_at</Text> says when.
+            </Paragraph>
+            <Request path="/tags/overview" />
+            <CodeBlock
+              language="json"
+              code={`{
+  "generated_at": "2026-11-05T13:17:29+00:00", "has_labels": false,
+  "totals": {"projects": 669736, "tagged": 171671, "distinct_tags": 288262, "occurrences": 926321, "...": "..."},
+  "frequency": [{"min_projects": 10, "tags": 9995}, "..."],
+  "top": [{"value": "Mus musculus", "count": 16823, "group": "organism", "organism": true}, "..."],
+  "types": [],
+  "tags_per_project": [{"n": 1, "projects": 19938}, "..."],
+  "coverage_by_year": [{"year": 2024, "projects": 71812, "tagged": 53927}, "..."],
+  "by_year": [{"year": 2024, "value": "liver", "count": 901}, "..."],
+  "network": {"nodes": ["..."], "edges": [{"source": "liver", "target": "mouse", "count": 721}, "..."]}
+}`}
             />
           </Section>
 

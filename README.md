@@ -45,7 +45,7 @@ npm install
 npm run dev
 ```
 
-See [docs/running.md](docs/running.md) for the full setup, configuration options and production build, [docs/filters.md](docs/filters.md) for how the search page's filters and search work, [docs/normalization.md](docs/normalization.md) for the admin page that normalises filter values, [docs/production.md](docs/production.md) for the database indexes and views production needs, and [docs/search.md](docs/search.md) for how the text search works.
+See [docs/running.md](docs/running.md) for the full setup, configuration options and production build, [docs/filters.md](docs/filters.md) for how the search page's filters and search work, [docs/normalization.md](docs/normalization.md) for the admin page that normalises filter values, [docs/bioproject-tags.md](docs/bioproject-tags.md) for the tag words and the tag explorer page, [docs/production.md](docs/production.md) for the database indexes and views production needs, and [docs/search.md](docs/search.md) for how the text search works.
 
 ## Data sources
 

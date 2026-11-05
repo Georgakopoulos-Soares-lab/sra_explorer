@@ -14,6 +14,8 @@ import type {
   SearchSummary,
   SraRun,
   Stats,
+  TagOverview,
+  TagRelated,
 } from './types'
 
 export { API_BASE_URL, ApiError } from './client'
@@ -72,6 +74,13 @@ export const api = {
 
   // Everything on the statistics page; computed by the backend in the background.
   statistics: (signal?: AbortSignal) => apiGet<DatabaseStatistics>('/statistics', undefined, { signal }),
+
+  // Everything on the tag explorer page that doesn't depend on chosen tags; computed by the backend in the background.
+  tagOverview: (signal?: AbortSignal) => apiGet<TagOverview>('/tags/overview', undefined, { signal }),
+
+  // The projects with the given tags: how many, which other tags they have, their organisms and release years.
+  tagRelated: (tags: string[], tagAny: boolean, signal?: AbortSignal) =>
+    apiGet<TagRelated>('/tags/related', { tag: tags, tag_any: tagAny ? 'true' : undefined }, { signal }),
 
   // The public API's rate limit and parameters, for the API documentation page.
   publicApiDocs: (signal?: AbortSignal) => apiGet<PublicApiDocs>('/search/public-api-docs', undefined, { signal }),

@@ -10,14 +10,14 @@ import {
 } from '@ant-design/icons'
 import { Button, Card, Skeleton, Statistic, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { api, type Stats } from '../api'
 import BrandName from '../components/BrandName'
 import { PUBLICATION } from '../config'
 
 const { Title, Paragraph, Text } = Typography
 
-const FEATURES: { icon: ReactNode; title: string; text: string }[] = [
+const FEATURES: { icon: ReactNode; title: string; text: string; link?: { to: string; label: string } }[] = [
   {
     icon: <SearchOutlined />,
     title: 'Describe the data you need',
@@ -42,6 +42,7 @@ const FEATURES: { icon: ReactNode; title: string; text: string }[] = [
     icon: <TagsOutlined />,
     title: 'Explore by tags',
     text: 'Projects are tagged with the organisms, diseases, tissues, cell types, cell lines and chemicals they describe. Click a tag to find related projects, or add one of the tags common in your results.',
+    link: { to: '/tags', label: 'Tag explorer' },
   },
   {
     icon: <LinkOutlined />,
@@ -207,6 +208,11 @@ export default function HomePage() {
                     {f.title}
                   </div>
                   <Text type="secondary">{f.text}</Text>
+                  {f.link && (
+                    <div className="mt-1">
+                      <Link to={f.link.to}>{f.link.label} →</Link>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
