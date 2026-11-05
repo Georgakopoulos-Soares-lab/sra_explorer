@@ -57,3 +57,5 @@ The scripts in `Automations/` build the database from public NCBI and ENA data:
 - Study metadata from the European Nucleotide Archive (ENA)
 
 The scripts in `Automations/metadata_dl/` are numbered in the order they run.
+
+On the production host the database is then kept current by the weekly update pipeline in `Automations/Auto_update/`, which adds new runs and projects every Sunday without dropping anything: see [docs/auto-update.md](docs/auto-update.md).

@@ -1,0 +1,9 @@
+# Python 3.14 venv for the weekly update pipeline (update.py and steps/).
+# Setup: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# The embedding and tag steps run their scripts under backend/.venv and
+# Automations/TagWords/.venv, so torch is not needed here.
+pyarrow>=26.0.1
+lxml>=6.1.3
+boto3>=1.43.123
+psycopg[binary]>=3.3.8
+numpy>=2.5.4

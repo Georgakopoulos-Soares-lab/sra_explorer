@@ -1,0 +1,15 @@
+# Runs srascout-update.service every Sunday at 02:00 local time (docs/auto-update.md).
+# Status: systemctl list-timers srascout-update.timer
+[Unit]
+Description=Weekly SRAscout database update
+
+[Timer]
+OnCalendar=Sun *-*-* 02:00:00
+# If the machine was off at 02:00, run as soon as it is back up.
+Persistent=true
+# Spread the start a little so it never coincides exactly with other weekly jobs.
+RandomizedDelaySec=15min
+Unit=srascout-update.service
+
+[Install]
+WantedBy=timers.target

@@ -166,8 +166,8 @@ export default function SearchPage() {
   const isDesktop = Grid.useBreakpoint().lg ?? true
 
   // Filter edits go into a draft and only reach the URL (and the backend) when
-  // Search is clicked. The draft resets whenever the applied search changes
-  // from outside, e.g. with the back button.
+  // Search or Apply filters is clicked. The draft resets whenever the applied
+  // search changes from outside, e.g. with the back button.
   const appliedKey = filtersKey(applied) + appliedQuery
   const [draft, setDraft] = useState<FilterValues>(applied)
   const [queryDraft, setQueryDraft] = useState(appliedQuery)
@@ -177,7 +177,11 @@ export default function SearchPage() {
     setDraft(applied)
     setQueryDraft(appliedQuery)
   }
-  const dirty = filtersKey(draft) + queryDraft.trim() !== appliedKey
+  // The sidebar's Apply filters button applies the filter draft only; the
+  // Search button next to the text box applies both the text and the draft.
+  // Each has its own pending flag.
+  const filtersDirty = filtersKey(draft) !== filtersKey(applied)
+  const queryDirty = queryDraft.trim() !== appliedQuery
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   // The results summary stays open from one search to the next once opened.
@@ -217,16 +221,25 @@ export default function SearchPage() {
     return () => controller.abort()
   }, [requestKey])
 
+  // The text box's Search: runs the typed text and applies any pending
+  // filter edits from the sidebar at the same time.
   const runSearch = (query = queryDraft) => {
     setQueryDraft(query)
     state.apply(draft, query)
+  }
+
+  // The sidebar's Apply filters: applies the filter draft and keeps the text
+  // search that is already running (the text box may hold unapplied text).
+  const applyFilters = () => {
+    state.apply(draft, appliedQuery)
     setDrawerOpen(false)
   }
 
+  // Reset clears the filters only; a text search stays.
   const reset = () => {
     setDraft({})
-    setQueryDraft('')
-    state.clearFilters()
+    state.apply({}, appliedQuery)
+    setDrawerOpen(false)
   }
 
   // Removing a chip or clicking a tag applies at once, and keeps any other
@@ -365,14 +378,14 @@ export default function SearchPage() {
 
   const panelFooter = (
     <div className="flex flex-col gap-2">
-      {dirty && (
+      {filtersDirty && (
         <Typography.Text type="warning" className="text-xs">
-          You have changes that aren't applied yet. Click Search to apply them.
+          Filter changes aren't applied yet. Click Apply filters or Search.
         </Typography.Text>
       )}
       <div className="flex gap-2">
-        <Button type="primary" icon={<SearchOutlined />} onClick={() => runSearch()} block>
-          Search
+        <Button type="primary" icon={<FilterOutlined />} onClick={applyFilters} block>
+          Apply filters
         </Button>
         <Button onClick={reset}>Reset</Button>
       </div>
@@ -385,10 +398,14 @@ export default function SearchPage() {
     <div className="mx-auto flex max-w-[1920px] gap-6 px-4 py-6">
       {isDesktop && (
         <aside className="w-72 shrink-0">
-          <div className="sticky top-4 flex max-h-[calc(100vh-2rem)] flex-col rounded-lg bg-white">
+          {/* The box is capped so it fits the viewport even at the top of the
+              page, where it starts under the 64px header and the page padding
+              (about 6.5rem in all); the Search bar sits above the scrolling
+              filter list so it is always in view, never below the fold. */}
+          <div className="sticky top-4 flex max-h-[calc(100vh-6.5rem)] flex-col rounded-lg bg-white">
             <div className="px-4 pb-1 pt-3 font-semibold">Filters</div>
+            <div className="border-b border-gray-100 p-3">{panelFooter}</div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">{panel}</div>
-            <div className="border-t border-gray-100 p-3">{panelFooter}</div>
           </div>
         </aside>
       )}
@@ -404,7 +421,7 @@ export default function SearchPage() {
             onChange={(e) => setQueryDraft(e.target.value)}
             onPressEnter={() => runSearch()}
           />
-          <Badge dot={dirty} offset={[-4, 4]}>
+          <Badge dot={queryDirty} offset={[-4, 4]}>
             <Button type="primary" size="large" onClick={() => runSearch()}>
               Search
             </Button>

@@ -87,6 +87,8 @@ Don't create a full-text index directly on `bioprojects`: search reads the store
 
 ## Reloading data
 
+On the production host, new data arrives through the weekly update pipeline ([auto-update.md](auto-update.md)), which inserts and updates rows, refreshes the views and fills `release_date` itself, without dropping any table; none of this section is needed after one of its runs. What follows is for a full reload from the schema files.
+
 The schema files drop and recreate their tables. Postgres won't drop a table that a view is built on, so drop the view first, then recreate it after the load. Recreating the table also removes its indexes, which the schema file adds back except for the search ones. Reloading `bioprojects` also drops its `release_date` column, so run `backend/sql/release_date.sql` again, after `study_facets` is back.
 
 Reloading also brings back the original spellings of any values renamed on the normalisation page. After the reloads, apply the recorded renames again (`cd backend && .venv/bin/python -m app.normalize apply`, or **Re-apply all rules** on the page); it refreshes the views that exist. See [normalization.md](normalization.md#rules-and-the-weekly-data-load).

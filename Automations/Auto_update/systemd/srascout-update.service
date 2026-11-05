@@ -1,0 +1,31 @@
+# Weekly update of the SRAscout database (docs/auto-update.md).
+# Started by srascout-update.timer; run by hand with: systemctl start srascout-update.service
+[Unit]
+Description=SRAscout weekly database update
+Documentation=file:///root/sra_explorer/docs/auto-update.md
+# Needs the network (S3, NCBI FTP) and the pgvector-db container.
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/sra_explorer/Automations/Auto_update
+# Optional tunables (AUTO_UPDATE_*, DATABASE_URL override); the pipeline also reads
+# this file and backend/.env itself, so the file may be missing.
+EnvironmentFile=-/root/sra_explorer/Automations/Auto_update/.env
+# The embedding and tag models are cached here (shared with srascout-api).
+Environment=HF_HOME=/root/.cache/huggingface
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/sra_explorer/Automations/Auto_update/.venv/bin/python /root/sra_explorer/Automations/Auto_update/update.py
+# The website and Postgres run on the same machine: keep the update in the background.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Downloads take 1-2 hours and the first run several more; never time out.
+TimeoutStartSec=infinity
+# update.py already refuses to run twice at once (flock); let a failure be seen in
+# `systemctl status` rather than retried blindly. The timer runs it again next week.
+Restart=no
+# No [Install] section on purpose: only the timer starts this unit. Enabling the
+# service itself would run the whole pipeline at every boot.

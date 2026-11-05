@@ -14,3 +14,9 @@ backend/.venvn/bin/python
 /.venv
 Automations/output/bioproject_embeddings.tsv.progress
 .venv-x86
+*.parquet
+# Weekly update pipeline (Automations/Auto_update): downloads, work files, run state, logs
+Automations/Auto_update/data/
+Automations/Auto_update/work/
+Automations/Auto_update/state/
+Automations/Auto_update/logs/
