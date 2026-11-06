@@ -4,7 +4,7 @@ import {
   ExperimentOutlined,
   FilterOutlined,
   InfoCircleOutlined,
-  LinkOutlined,
+  ReadOutlined,
   SearchOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
@@ -20,34 +20,35 @@ const { Title, Paragraph, Text } = Typography
 const FEATURES: { icon: ReactNode; title: string; text: string; link?: { to: string; label: string } }[] = [
   {
     icon: <SearchOutlined />,
-    title: 'Describe the data you need',
-    text: 'Type what you are looking for in plain language. Semantic and full-text search are combined, so you find projects that describe it in other words as well as those using your exact terms. Or paste BioProject and SRA study accessions.',
-  },
-  {
-    icon: <ExperimentOutlined />,
-    title: 'Search by sample',
-    text: 'Filter by cell line, cell type, tissue, sex, disease, genotype or strain, treatment and ChIP target, taken from the attributes submitters gave their samples and cleaned up so that different spellings match.',
-  },
-  {
-    icon: <ClusterOutlined />,
-    title: 'Search by how data was made',
-    text: 'Combine assay type, instrument, library layout, library selection and sequencing center. A project matches when one of its runs fits them all.',
-  },
-  {
-    icon: <FilterOutlined />,
-    title: 'Filters that guide you',
-    text: 'Also narrow by organism, release date, submitting organisation, size and publications. Each filter only offers values found in projects matching your other choices, with counts, so you see what is available before you search.',
+    title: 'Semantic search',
+    text: 'Find datasets by describing them in natural language, beyond exact keyword matches.',
+    link: { to: '/search', label: 'Start searching' },
   },
   {
     icon: <TagsOutlined />,
-    title: 'Explore by tags',
-    text: 'Projects are tagged with the organisms, diseases, tissues, cell types, cell lines and chemicals they describe. Click a tag to find related projects, or add one of the tags common in your results.',
+    title: 'Biological tags',
+    text: 'Explore organisms, diseases, tissues, cell types and chemicals extracted from project descriptions.',
     link: { to: '/tags', label: 'Tag explorer' },
   },
   {
-    icon: <LinkOutlined />,
-    title: 'Go straight to the source',
-    text: 'Every result links to its BioProject page in ENA and its SRA study page at NCBI, shows its publications and GEO series, and lists its FASTQ files with direct download links from ENA.',
+    icon: <ReadOutlined />,
+    title: 'Publication search',
+    text: 'Paste a DOI or PubMed ID to find the sequencing datasets behind a paper, or related to it.',
+  },
+  {
+    icon: <FilterOutlined />,
+    title: 'Dynamic filters',
+    text: 'Narrow results by organism, sample attributes, date and more. Filters show only values that match, with counts.',
+  },
+  {
+    icon: <ExperimentOutlined />,
+    title: 'Sequencing details',
+    text: 'Filter by assay, instrument, library layout and selection. A project matches when one of its runs fits them all.',
+  },
+  {
+    icon: <ClusterOutlined />,
+    title: 'Similar datasets',
+    text: 'Open any project to discover related studies by semantic similarity, then go straight to ENA, NCBI and FASTQ files.',
   },
 ]
 
@@ -177,10 +178,13 @@ export default function HomePage() {
         <Title className="!mb-3">
           <BrandName />
         </Title>
+        <p className="mx-auto mb-3 max-w-3xl text-2xl font-bold leading-snug text-gray-900 md:text-3xl">
+          Beyond keywords. <span className="text-brand-sra">Discover sequencing data.</span>
+        </p>
         <Paragraph className="mx-auto max-w-2xl text-lg text-gray-600">
-          Find sequencing datasets in the NCBI Sequence Read Archive. SRAscout brings SRA run
-          metadata, sample attributes and BioProject records together, so you can describe the
-          data you need, or narrow it down by organism, sample, assay and how it was sequenced.
+          Explore the NCBI Sequence Read Archive through semantic search, enriched metadata and
+          dynamic filters. Describe what you are looking for, search by publication, explore
+          biological tags and discover similar datasets.
         </Paragraph>
         <div className="flex flex-wrap justify-center gap-3">
           <Button type="primary" size="large" icon={<SearchOutlined />} onClick={() => navigate('/search')}>
@@ -198,9 +202,9 @@ export default function HomePage() {
 
       <section className="mb-12">
         <Title level={3}>What you can do</Title>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
-            <Card key={f.title}>
+            <Card key={f.title} className="h-full">
               <div className="flex gap-3">
                 <span className="text-2xl text-blue-600">{f.icon}</span>
                 <div>
