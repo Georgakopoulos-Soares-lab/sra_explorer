@@ -12,12 +12,13 @@ import Publications from '../search/Publications'
 import ResultsSummary from '../search/ResultsSummary'
 import SearchExamples from '../search/SearchExamples'
 import SearchModes from '../search/SearchModes'
+import SearchProgress from '../search/SearchProgress'
 import SimilarProjects from '../search/SimilarProjects'
 import TagBar from '../search/TagBar'
 import TagList from '../search/TagList'
 import { projectPublications } from '../search/parsePublications'
 import { type SortKey } from '../search/filters'
-import { parseReference, referenceLabel } from '../search/reference'
+import { parseReference } from '../search/reference'
 import {
   applyUpdate,
   filtersKey,
@@ -212,7 +213,7 @@ export default function SearchPage() {
     return () => controller.abort()
   }, [state.semanticQuery])
   const resolved = reference && publication?.key === state.semanticQuery ? publication.pub : undefined
-  const resolving = !!reference && publication?.key !== state.semanticQuery
+  const resolveFailed = !!reference && publication?.key === state.semanticQuery && !publication.pub
 
   useEffect(() => {
     const key = requestKey
@@ -452,18 +453,12 @@ export default function SearchPage() {
                       <span className="rounded border border-solid border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-800">
                         {resolved?.title || state.semanticQuery}
                       </span>
-                      {reference && (
+                      {resolved && (
                         <span className="ml-2 text-xs text-gray-500">
-                          {resolving ? (
-                            <>Looking up {referenceLabel(reference)}…</>
-                          ) : resolved ? (
-                            <>
-                              the title and abstract of{' '}
-                              <a href={resolved.url} target="_blank" rel="noreferrer">
-                                {resolved.pmid ? `PubMed ${resolved.pmid}` : `DOI ${resolved.doi}`} <ExportOutlined />
-                              </a>
-                            </>
-                          ) : null}
+                          the title and abstract of{' '}
+                          <a href={resolved.url} target="_blank" rel="noreferrer">
+                            {resolved.pmid ? `PubMed ${resolved.pmid}` : `DOI ${resolved.doi}`} <ExportOutlined />
+                          </a>
                         </span>
                       )}
                     </>
@@ -472,14 +467,25 @@ export default function SearchPage() {
                   ? `${results.total.toLocaleString()} project${results.total === 1 ? '' : 's'}`
                   : ' '}
           </span>
-          {/* The table only dims while loading; the spinner sits here, near the
-              search box, so it's in view however long the table is. */}
-          {loading && (
-            <span className="flex items-center gap-2 text-sm text-blue-600">
-              <Spin size="small" /> Searching…
-            </span>
-          )}
         </div>
+
+        {/* The table only dims while loading; the steps of the search show
+            here, near the search box, so they're in view however long the
+            table is. A new component per search restarts them. */}
+        {loading && (
+          <SearchProgress
+            key={requestKey}
+            semanticQuery={state.semanticQuery}
+            accessions={state.accessions}
+            filters={applied}
+            sort={state.sort}
+            page={state.page}
+            pageSize={state.pageSize}
+            reference={reference}
+            resolved={resolved}
+            resolveFailed={resolveFailed}
+          />
+        )}
 
         {!isDesktop && activeFilters(false)}
 

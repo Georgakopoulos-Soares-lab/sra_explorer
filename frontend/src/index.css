@@ -20,3 +20,47 @@
 .ant-drawer-body {
   overscroll-behavior: contain;
 }
+
+/* The search's step-by-step progress (search/SearchProgress.tsx): new steps
+   fade in, the step in progress shimmers, and its dot and the spark pulse. */
+@keyframes search-progress-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes search-progress-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@keyframes search-progress-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+.search-progress-in {
+  animation: search-progress-in 0.25s ease-out both;
+}
+.search-progress-shimmer {
+  color: #1f2937;
+  background: linear-gradient(90deg, #1f2937 0%, #1f2937 40%, #69b1ff 50%, #1f2937 60%, #1f2937 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: search-progress-shimmer 1.8s linear infinite;
+}
+.search-progress-dot,
+.search-progress-spark {
+  display: inline-block;
+  animation: search-progress-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-progress-in,
+  .search-progress-dot,
+  .search-progress-spark {
+    animation: none;
+  }
+  .search-progress-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
