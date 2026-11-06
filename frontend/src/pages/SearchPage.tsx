@@ -231,8 +231,22 @@ export default function SearchPage() {
     return () => controller.abort()
   }, [requestKey])
 
+  // The step-by-step progress shows only for searches the user starts with
+  // the Search button (or Enter) or an example, not for filter, sort or page
+  // changes. A click records the search it was made from; the next new
+  // search is the one it started, and the progress follows that search only.
+  const [progress, setProgress] = useState<{ from: string; key?: string }>()
+  if (progress && !progress.key && requestKey !== progress.from) setProgress({ ...progress, key: requestKey })
+  const showProgress = loading && !!progress?.key && progress.key === requestKey
+  // Called before a search the user started; nothing happens when it would
+  // run the search already shown.
+  const startWithProgress = (filters: typeof applied, query: string) => {
+    if (filtersKey(filters) + query.trim() !== appliedKey) setProgress({ from: requestKey })
+  }
+
   // The text box's Search: runs the typed text with the current filters.
   const runSearch = (query = queryDraft) => {
+    startWithProgress(applied, query)
     setQueryDraft(query)
     state.apply(applied, query)
   }
@@ -472,7 +486,7 @@ export default function SearchPage() {
         {/* The table only dims while loading; the steps of the search show
             here, near the search box, so they're in view however long the
             table is. A new component per search restarts them. */}
-        {loading && (
+        {showProgress && (
           <SearchProgress
             key={requestKey}
             semanticQuery={state.semanticQuery}
@@ -511,7 +525,12 @@ export default function SearchPage() {
           />
         )}
 
-        {noSearch && <SearchExamples onRun={(ex) => applyNow(ex.filters ?? {}, ex.query)} />}
+        {noSearch && <SearchExamples
+            onRun={(ex) => {
+              startWithProgress(applyUpdate(applied, ex.filters ?? {}), ex.query)
+              applyNow(ex.filters ?? {}, ex.query)
+            }}
+          />}
 
         {!noSearch && (
           <Table<SearchHit>
