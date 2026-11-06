@@ -1,3 +1,4 @@
+import { CheckOutlined } from '@ant-design/icons'
 import { parseAccessions } from './filters'
 import { parseReference } from './reference'
 
@@ -40,12 +41,14 @@ export default function SearchModes({ text }: { text: string }) {
         <span
           key={m.key}
           title={m.title}
-          className={`rounded-md border border-solid px-3 py-1 transition-colors ${
+          aria-current={mode === m.key ? 'true' : undefined}
+          className={`inline-flex items-center gap-1.5 rounded-md border border-solid px-3 py-1 transition-colors ${
             mode === m.key
-              ? 'border-sky-200 bg-sky-50 font-medium text-sky-800'
+              ? 'border-brand-sra bg-brand-sra font-medium text-white shadow-sm'
               : 'border-gray-200 bg-gray-50 text-gray-400'
           }`}
         >
+          {mode === m.key && <CheckOutlined className="text-xs" />}
           {m.label}
         </span>
       ))}

@@ -10,6 +10,7 @@ import DetailSection from '../search/DetailSection'
 import FilterPanel from '../search/FilterPanel'
 import Publications from '../search/Publications'
 import ResultsSummary from '../search/ResultsSummary'
+import SearchExamples from '../search/SearchExamples'
 import SearchModes from '../search/SearchModes'
 import SimilarProjects from '../search/SimilarProjects'
 import TagBar from '../search/TagBar'
@@ -27,8 +28,6 @@ import {
 
 const NCBI = 'https://www.ncbi.nlm.nih.gov'
 const ENA = 'https://www.ebi.ac.uk/ena/browser/view'
-// Shown under the search box; clicking it runs this search.
-const EXAMPLE_QUERY = 'RNA-seq of breast cancer tumors treated with tamoxifen'
 const splitList = (value: string | null) => (value ? value.split('; ').filter(Boolean) : [])
 // Publications tag: darker green for more publications, in three steps
 // (antd's green palette; text keeps enough contrast on each background).
@@ -433,16 +432,6 @@ export default function SearchPage() {
             Describe the data, or enter BioProject or SRA study accessions (e.g. PRJNA787491, SRP079428), or a
             paper's DOI or PubMed ID to search with its title and abstract.
           </span>
-          <span>
-            Example:{' '}
-            <button
-              type="button"
-              className="cursor-pointer border-0 bg-transparent p-0 text-xs text-blue-600 underline-offset-2 hover:underline"
-              onClick={() => runSearch(EXAMPLE_QUERY)}
-            >
-              “{EXAMPLE_QUERY}”
-            </button>
-          </span>
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2 pl-6">
@@ -515,6 +504,8 @@ export default function SearchPage() {
             onAdd={addFilterValue}
           />
         )}
+
+        {noSearch && <SearchExamples onRun={(ex) => applyNow(ex.filters ?? {}, ex.query)} />}
 
         {!noSearch && (
           <Table<SearchHit>
