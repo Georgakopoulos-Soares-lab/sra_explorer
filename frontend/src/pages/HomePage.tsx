@@ -284,6 +284,16 @@ export default function HomePage() {
           ))}
         </ul>
       </section>
+
+      <section className="mt-12 border-t border-gray-200 pt-6 text-center">
+        <Text type="secondary">
+          This work is licensed under{' '}
+          <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noreferrer">
+            CC BY 4.0
+          </a>
+          .
+        </Text>
+      </section>
     </div>
   )
 }
