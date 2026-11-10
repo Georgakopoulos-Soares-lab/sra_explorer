@@ -262,10 +262,13 @@ def init_worker(threads):
 def embed_tags(tags):
     """Tag -> unit vector, memoised per worker (frequent tags like 'mouse' recur)."""
     cache = _worker["cache"]
+    # Bound the cache before looking the tags up: clearing it after the lookup
+    # (as this once did) threw away vectors of tags that were "already cached"
+    # and crashed the run with a KeyError once a worker had seen 50k distinct tags.
+    if len(cache) > 50_000:
+        cache.clear()
     missing = [t for t in tags if t not in cache]
     if missing:
-        if len(cache) > 50_000:
-            cache.clear()
         vecs = _worker["embedder"].encode(missing, batch_size=256, normalize_embeddings=True,
                                           convert_to_numpy=True, show_progress_bar=False)
         cache.update(zip(missing, vecs.astype(np.float16)))

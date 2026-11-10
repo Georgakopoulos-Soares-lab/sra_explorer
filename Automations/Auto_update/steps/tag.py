@@ -48,18 +48,30 @@ def work_paths() -> tuple[Path, Path, Path]:
             common.WORK_DIR / "tag_output.tsv")
 
 
-def recover_previous_run(ctx: common.Context) -> int:
+def output_bioprojects(path: Path) -> set[str]:
+    """The accessions in a (possibly half-written) output TSV."""
+    if not path.exists():
+        return set()
+    with open(path, "rb") as f:
+        lines = [line for line in f if line.endswith(b"\n")][1:]
+    return {line.split(b"\t", 1)[0].decode("utf-8", "replace") for line in lines if line.strip()}
+
+
+def recover_previous_run(ctx: common.Context) -> tuple[int, set[str]]:
     """Upserts what an interrupted run had already tagged, then removes its
-    work files, so the step starts from a fresh target list (projects tagged
-    by the old run are no longer untagged, queued ones whose text changed
-    since are tagged again from their current text). Returns rows recovered."""
+    work files, so the step starts from a fresh target list. Returns the rows
+    recovered and their accessions: the caller drops them from the retag
+    queue, since they were tagged from the text this cycle queued them for
+    (without that, a queued project was tagged a second time after every
+    interruption, hours of work redone)."""
     _, _, out_path = work_paths()
-    recovered = 0
+    recovered, ids = 0, set()
     if out_path.exists() and count_output(out_path) > 0:
+        ids = output_bioprojects(out_path)
         recovered = upsert(ctx, out_path)
         ctx.log.info("recovered %d tagged bioprojects from an interrupted run", recovered)
     remove_work_files()
-    return recovered
+    return recovered, ids
 
 
 def write_input(path: Path, rows: Iterable[dict]) -> None:
@@ -212,8 +224,14 @@ def run_extract_tags(ctx: common.Context, in_path: Path, emb_path: Path, out_pat
 # ---------------------------------------------------------------- step
 def run(ctx: common.Context) -> dict:
     common.WORK_DIR.mkdir(parents=True, exist_ok=True)
-    recovered = recover_previous_run(ctx) if not ctx.options.dry_run else 0
+    recovered, recovered_ids = recover_previous_run(ctx) if not ctx.options.dry_run else (0, set())
     pending = ctx.pending_read("retag")
+    if recovered_ids:
+        # Rewrite the queue without the recovered projects, so a second
+        # interruption doesn't bring them back either.
+        pending = [p for p in pending if p not in recovered_ids]
+        ctx.pending_clear("retag")
+        ctx.pending_add("retag", pending)
     with ctx.connect() as conn:
         backfill = backfill_targets(ctx, conn, pending)
         targets = pending + backfill
