@@ -5,7 +5,7 @@ const VISIBLE = 5
 
 // A project's tag words as quiet grey chips under its title. Tags that repeat
 // the organism (already in its own column) are left out. Clicking a chip adds
-// it to the Tags filter; tags already in the filter are blue. "+N more" shows
+// it to the Tags filter; tags already in the filter are solid blue. "+N more" shows
 // the rest in place. Clicks don't reach the row, so it doesn't expand.
 export default function TagList({ tags, organism, selected = [], onSelect }: {
   tags: string[]
@@ -34,7 +34,7 @@ export default function TagList({ tags, organism, selected = [], onSelect }: {
             title={active ? 'In the Tags filter' : 'Show only projects with this tag'}
             disabled={active || !onSelect}
             className={`rounded border-0 px-1.5 py-px text-xs ${
-              active ? 'bg-blue-100 text-blue-700' : 'cursor-pointer bg-gray-100 text-gray-600 hover:bg-gray-200'
+              active ? 'bg-brand-sra font-medium text-white' : 'cursor-pointer bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
             onClick={(e) => {
               e.stopPropagation()

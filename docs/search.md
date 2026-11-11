@@ -100,7 +100,47 @@ The search page used to show both in a **Match** column; it was removed to keep 
 
 ### 5. Suggested tags
 
-After the results arrive, the page asks `GET /search/tag-summary` (same parameters) for the most frequent tags among the top 2,000 results, and shows them as **Suggested** in the Tags row above the table. For a text search this reuses the same fused list (`fused_matches` in `search.py`); the search text's embedding is cached, so it isn't computed twice. See [bioproject-tags.md](bioproject-tags.md#how-search-uses-the-tags).
+After the results arrive, the page asks `GET /search/tag-summary` (same parameters) for the most frequent tags among the top 2,000 results, and shows them as **Suggested** in the Tags row above the table. For a text search this reuses the same fused list (`fused_matches` in `search.py`); the search text's embedding is cached, so it isn't computed twice. See [bioproject-tags.md](bioproject-tags.md#how-search-uses-the-tags). The [deep search](#deep-search) goes one step further and adds the tags the text itself names, before the search runs.
+
+## Deep search
+
+The **Deep search** switch under the search box (on by default; `guided=0` in the page URL turns it off) makes a text search more precise by adding tags to it: the tag words found in the text, matched with the tags of the search's own top results. It is the same hybrid search, with the Tags filter filled in from the text ("guided" in the code and the URL). The code is `backend/app/query_tags.py`; the page's part is in `frontend/src/pages/SearchPage.tsx`.
+
+A deep search is two requests, which reproduce it from the command line:
+
+```bash
+# 1. Which tags does the text give, with the current filters?
+curl 'http://localhost:8000/search/query-tags?q=single-cell+RNA-seq+of+human+lung+tumours'
+# → "selected": ["Homo sapiens", "lung cancer"], with every tag considered and why
+
+# 2. The ordinary search with those tags (what the page then runs).
+curl 'http://localhost:8000/search/bioprojects?q=single-cell+RNA-seq+of+human+lung+tumours&tag=Homo+sapiens&tag=lung+cancer'
+```
+
+`GET /search/query-tags` takes the same parameters as `/search/bioprojects` (`q` is required; the filters are honoured, and `tag_any=true` is refused with 422, since every added tag must match). It answers in four steps:
+
+1. **Phrases.** The text (for a DOI or PubMed ID, the paper's title and abstract) is cut into every run of 1–5 words among its first 300 words, except runs that start or end with a stop word ("of", "the", "sequencing", "data"). Phrases and tags are compared after the same normalisation: lowercase, hyphens split, possessives dropped, British spellings made American, the last word made singular with the tagging pipeline's rules. "lung tumours" becomes "lung tumor", "T-cells" "t cell", "CD4+ T cells" "cd4 t cell".
+2. **Pool.** The search's top rows with the current filters, at most 2,000 (the same list the suggested tags are counted over; for a text search it is the fused candidate list, usually about 1,000 projects, see [Limits](#limits)), are read with their tags. A tag's **count** is the number of pool projects that have it; tags on fewer than 3 are ignored, since a tag the results don't share is no use as a filter however well it matches the text.
+3. **Matches.** A phrase matches a pool tag when they are the same after normalisation (**exact**), when the phrase is a common organism name and the tag its species (**alias**: "human" → `Homo sapiens`, "mouse" → `Mus musculus`; 53 common names for 38 species in `ORGANISM_ALIASES`), or when they are **similar**: a BioBERT cosine similarity of at least 0.75 together with a word or head word in common ("lung tumor" → `lung cancer` at 0.83; `HEAD_WORDS` maps tumor and carcinoma to cancer, renal to kidney, hepatic to liver…), or of at least 0.85 without one; only phrases of up to 3 words are compared this way (`MAX_SIMILAR_WORDS`), longer ones match only as they are. Pairs that differ only in a qualifier never match ("type 1 diabetes" and "type 2 diabetes", "T cell" and "B cell"). A phrase that is itself a tag only matches that way; its synonyms aren't looked up ("hepatocellular carcinoma" is also 0.82 from "cholangiocarcinoma").
+4. **Choice.** Each match is scored by its tag's count times the log of its **lift**, the tag's share of the pool's tagged projects divided by its share of all tagged projects, so tags the results share far more than usual come first, while a common tag the text names (`Homo sapiens`, on 10% of all tagged projects) still scores by its count. An exact match inside a longer exact match of comparable count gives way to it ("soil" to "soil microbiome"). Matches are taken best first. One is skipped when its words were already used by a taken tag ("lung" after "lung tumours" took `lung cancer`), when its tag is a spelling of a taken one or names the same organism ("silkworm" after `Bombyx mori`, `S. pombe` after `Schizosaccharomyces pombe`), and, because a project must have every chosen tag, when fewer than the **floor** (5 or 2% of the pool's tagged projects, whichever is larger) would keep all the tags taken so far. At most 4 tags are taken.
+
+The answer lists every tag considered with the words it matched, how (and the cosine for similar matches), its count, how many pool projects keep every tag up to it, and why it was or wasn't selected; The page then applies the selected tags like tags chosen by hand: they are in the URL as `tag=`, marked with ✦ in the Tags row and listed in `auto=`, so they can be removed one by one or together, and the next text search drops them before choosing again. Filter, sort and page changes keep them.
+
+Only projects with tags can match a tag filter (about a quarter so far, see [bioproject-tags.md](bioproject-tags.md#how-search-uses-the-tags)), so a deep search returns fewer results (the API answer says how many of the top results had no tags). When no tag word in the text is shared by the results, the search runs without tags. If `/search/query-tags` fails (the model unavailable, a 20-second statement timeout on the pool), the search still runs, as a standard one, with a warning.
+
+### Checks on the development data
+
+Self-retrieval over 300 random tagged projects (development data, 2026-11-11): each project's own title and description was the search text, and a chosen tag counts as right only when it is among that project's own tags, so a synonym or another spelling of a right tag counts as wrong:
+
+| | |
+| --- | --- |
+| Projects for which tags were chosen | 263 of 300 (88%) |
+| Tags chosen per project (mean) | 1.3 |
+| Chosen tags among the project's own tags | 60% (57% before spellings are evened out) |
+| Projects still found by their own description with all chosen tags | 48% of the 263 |
+| Time to choose the tags (median / 90th percentile, model warm, Apple M-series) | 0.75 s / 1.5 s |
+
+The fourth row is the recall cost of the mode: a chosen tag that a project lacks (a synonym the pipeline spelled differently, or a mention the pipeline's relevance filter dropped) hides that project, and the mode is meant for precision, not recall. `backend/tests/evaluate_query_tags.py` reruns the check (`cd backend && .venv/bin/python -m tests.evaluate_query_tags 300`); the numbers will change as more projects are tagged. The pure parts (phrases, matching, choice) are unit-tested in `backend/tests/test_query_tags.py`. Eight hand-checked queries ("single-cell RNA-seq of human lung tumours" → `Homo sapiens`, `lung cancer`; "ATAC-seq of mouse hematopoietic stem cells" → `hematopoietic stem cell`, `Mus musculus`; "soil microbiome" → `soil microbiome`; "tamoxifen resistance in breast cancer" → `breast cancer`, `tamoxifen`; "gut microbiota of patients with inflammatory bowel disease" → `gut microbiota`, `inflammatory bowel disease`; "type 2 diabetes pancreatic islets" → `type 2 diabetes`, `pancreatic islet`; "Alzheimer's disease microglia in aged mice" → `microglia`, `alzheimer's disease`, `Mus musculus`; a PubMed ID → `Homo sapiens`, `lung cancer`) chose only tags named in the text. The vectors of the 5,000 most common tags are embedded at startup and those of phrases and other tags are cached, so a new text costs the pool query plus one embedding batch: 0.1–0.5 s for a sentence, about a second for an abstract, before the search itself.
 
 ## Limits
 

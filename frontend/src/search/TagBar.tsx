@@ -6,8 +6,10 @@ import { api, type FacetValue, type SearchParams } from '../api'
 // The Tags row above the results: the chosen tags (removable), then tags
 // common among the top results as suggestions to add. Suggestions load after
 // the results, so they never delay them. Hidden when there's nothing to show.
-export default function TagBar({ selected, matchAny = false, params, suggest, onAdd, onRemove, onClear }: {
+export default function TagBar({ selected, auto = [], matchAny = false, params, suggest, onAdd, onRemove, onClear }: {
   selected: string[]
+  // The chosen tags a deep search added from the search text (marked).
+  auto?: string[]
   // Whether a project needs only one of the chosen tags ("Match any of the tags").
   matchAny?: boolean
   // The search's parameters, for the suggestions.
@@ -43,13 +45,19 @@ export default function TagBar({ selected, matchAny = false, params, suggest, on
             {matchAny ? 'any of' : 'all of'}
           </span>
         )}
+        {/* Active tags are solid blue; the suggestions after them are light and dashed. */}
         {selected.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1 rounded border border-solid border-sky-200 bg-sky-50 py-0.5 pl-2 pr-1 text-sky-800">
+          <span
+            key={t}
+            title={auto.includes(t) ? 'Added by Deep search from your text' : 'Active tag: only projects with it are shown'}
+            className="inline-flex items-center gap-1 rounded border border-solid border-brand-sra bg-brand-sra py-0.5 pl-2 pr-1 font-medium text-white shadow-sm"
+          >
+            {auto.includes(t) && <span className="text-[10px]" aria-hidden>✦</span>}
             {t}
             <button
               type="button"
               aria-label={`Remove tag ${t}`}
-              className="flex cursor-pointer border-0 bg-transparent p-0 text-sky-400 hover:text-sky-700"
+              className="flex cursor-pointer border-0 bg-transparent p-0 text-blue-200 hover:text-white"
               onClick={() => onRemove(t)}
             >
               <CloseOutlined className="text-[10px]" />

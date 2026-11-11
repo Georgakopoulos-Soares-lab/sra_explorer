@@ -90,6 +90,41 @@ class FacetValue(BaseModel):
     group: Optional[str] = None
 
 
+class QueryTag(BaseModel):
+    """A tag a deep search considered (backend/app/query_tags.py)."""
+
+    value: str
+    # Projects among the search's top results (the pool) with the tag, and
+    # among all tagged projects.
+    count: int
+    corpus: int
+    group: Optional[str] = None
+    # The words of the text it matched (normalised) and how: exact, alias
+    # (a common organism name) or similar (by embedding, with the cosine).
+    phrase: str
+    match: str
+    similarity: float
+    selected: bool
+    # Pool projects that have this tag and every tag selected before it
+    # (null when it wasn't counted), and why it wasn't selected.
+    remaining: Optional[int] = None
+    reason: Optional[str] = None
+
+
+class QueryTags(BaseModel):
+    # The start of the text the tags were read from, and how many of its words were read.
+    text: str
+    words: int
+    # Top results examined, how many of them have tags and how many don't,
+    # and the fewest tagged ones that must keep every selected tag.
+    pool: int
+    tagged: int
+    untagged: int
+    floor: int
+    tags: list[QueryTag]
+    selected: list[str]
+
+
 class Stats(BaseModel):
     bioprojects: int
     studies: int

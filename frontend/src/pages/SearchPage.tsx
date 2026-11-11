@@ -1,7 +1,15 @@
-import { CloudDownloadOutlined, ExportOutlined, FileTextOutlined, FilterOutlined, ReadOutlined, SearchOutlined } from '@ant-design/icons'
-import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Spin, Table, Tag, Typography } from 'antd'
+import {
+  CloudDownloadOutlined,
+  ExportOutlined,
+  FileTextOutlined,
+  FilterOutlined,
+  InfoCircleOutlined,
+  ReadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons'
+import { Alert, Badge, Button, Descriptions, Drawer, Grid, Input, Spin, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableColumnsType, TableProps } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type Bioproject, type ResolvedPublication, type SearchHit, type SearchResults } from '../api'
 import ExternalLink from '../components/ExternalLink'
 import { countRuns } from '../ena/api'
@@ -12,12 +20,12 @@ import Publications from '../search/Publications'
 import ResultsSummary from '../search/ResultsSummary'
 import SearchExamples from '../search/SearchExamples'
 import SearchModes from '../search/SearchModes'
-import SearchProgress from '../search/SearchProgress'
+import SearchProgress, { type GuidedState } from '../search/SearchProgress'
 import SimilarProjects from '../search/SimilarProjects'
 import TagBar from '../search/TagBar'
 import TagList from '../search/TagList'
 import { projectPublications } from '../search/parsePublications'
-import { type SortKey } from '../search/filters'
+import { parseAccessions, type SortKey } from '../search/filters'
 import { parseReference } from '../search/reference'
 import {
   applyUpdate,
@@ -39,6 +47,11 @@ const publicationShade = (n: number) =>
       ? '!border-[#73d13d] !bg-[#95de64] !text-[#135200]' // 2: green-4, green-9 text
       : '!border-[#95de64] !bg-[#d9f7be] !text-[#389e0d]' // 1: green-2, green-7 text
 const rowKey = (p: SearchHit) => `${p.bioproject}:${p.sra_study}`
+// The deep search switch, under the search box.
+const GUIDED_LABEL = 'Deep search'
+const GUIDED_HELP =
+  'Performs deep search by finding the organisms, diseases, tissues, cell types and other tag words in your text. Fewer, more precise results.'
+
 // Small muted label above a field of an expanded result (Title, Description).
 const FIELD_LABEL = 'mb-0.5 text-xs font-medium uppercase tracking-wide text-gray-400'
 // An expanded project and its details share a tint and a blue bar on the left,
@@ -176,6 +189,40 @@ export default function SearchPage() {
     setQueryDraft(appliedQuery)
   }
   const queryDirty = queryDraft.trim() !== appliedQuery
+  const appliedTags = (applied.tag as string[] | undefined) ?? []
+
+  // The deep search: with the switch on, a text search first asks
+  // /search/query-tags which tags to add, then runs with them (kept as auto
+  // tags in the URL, see useSearchState). One run at a time: a newer search,
+  // a filter change or leaving the page abandons it.
+  const [progress, setProgress] = useState<{ from: string; key?: string; guide?: number }>()
+  const [guiding, setGuiding] = useState<{ id: number; query: string } & GuidedState>()
+  // The run in flight: its id, how to cancel it, and the applied search it
+  // started from (a change of it from elsewhere, e.g. the back button, ends the run).
+  const guideRun = useRef<{ id: number; controller: AbortController; from: string }>(undefined)
+  const guideSeq = useRef(0)
+  useEffect(() => () => guideRun.current?.controller.abort(), [])
+  const abortGuiding = () => {
+    if (!guideRun.current) return
+    guideRun.current.controller.abort()
+    guideRun.current = undefined
+    setGuiding(undefined)
+    setProgress(undefined)
+  }
+  useEffect(() => {
+    if (guideRun.current && guideRun.current.from !== appliedKey) abortGuiding()
+  })
+  const setGuided = (on: boolean) => {
+    if (!on) abortGuiding()
+    state.setGuided(on)
+  }
+  // Why the switch can't be used right now, if it can't.
+  const guideDisabled = parseAccessions(queryDraft)
+    ? 'Accessions are looked up directly: there is no text to read tag words from.'
+    : applied.tag_any === 'true'
+      ? 'Turn off "Match any of the tags" in the filter panel to use it: every added tag must match.'
+      : null
+  const canGuide = state.guided && !guideDisabled
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   // The results summary stays open from one search to the next once opened.
@@ -235,29 +282,68 @@ export default function SearchPage() {
   // the Search button (or Enter) or an example, not for filter, sort or page
   // changes. A click records the search it was made from; the next new
   // search is the one it started, and the progress follows that search only.
-  const [progress, setProgress] = useState<{ from: string; key?: string }>()
+  // A deep search shows it from its first phase (`guide` is that run;
+  // the state itself is declared with the guided run above).
   if (progress && !progress.key && requestKey !== progress.from) setProgress({ ...progress, key: requestKey })
-  const showProgress = loading && !!progress?.key && progress.key === requestKey
+  const guidedProgress = progress?.guide !== undefined && guiding?.id === progress.guide ? guiding : undefined
+  const showProgress =
+    (loading && !!progress?.key && progress.key === requestKey) || guidedProgress?.status === 'running'
   // Called before a search the user started; nothing happens when it would
   // run the search already shown.
   const startWithProgress = (filters: typeof applied, query: string) => {
     if (filtersKey(filters) + query.trim() !== appliedKey) setProgress({ from: requestKey })
   }
 
-  // The text box's Search: runs the typed text with the current filters.
-  const runSearch = (query = queryDraft) => {
-    startWithProgress(applied, query)
+  // The text box's Search (and the examples): runs the text with the given
+  // filters, less the tags the previous deep search added. With the
+  // switch on, a text search first asks which tags to add.
+  const runSearch = (query = queryDraft, filters = applied) => {
+    abortGuiding()
+    const text = query.trim()
+    const base = applyUpdate(filters, { tag: ((filters.tag as string[] | undefined) ?? []).filter((t) => !state.autoTags.includes(t)) })
     setQueryDraft(query)
-    state.apply(applied, query)
+    if (!state.guided || applied.tag_any === 'true' || !text || parseAccessions(text)) {
+      setGuiding(undefined)
+      startWithProgress(base, text)
+      state.apply(base, text)
+      return
+    }
+    const id = ++guideSeq.current
+    const controller = new AbortController()
+    guideRun.current = { id, controller, from: appliedKey }
+    setProgress({ from: requestKey, guide: id })
+    setGuiding({ id, query: text, status: 'running' })
+    // Runs the search once the tags are known. The progress is dropped when
+    // that is the search already shown (nothing would load).
+    const finish = (filters: typeof applied, auto: string[]) => {
+      guideRun.current = undefined
+      if (filtersKey(filters) + text === appliedKey) setProgress(undefined)
+      state.apply(filters, text, auto)
+    }
+    api
+      .queryTags({ ...base, q: text }, controller.signal)
+      .then((result) => {
+        if (guideRun.current?.id !== id) return // a newer search took over
+        setGuiding({ id, query: text, status: 'done', result })
+        const tags = [...((base.tag as string[] | undefined) ?? []), ...result.selected]
+        finish(applyUpdate(base, { tag: tags }), result.selected)
+      })
+      .catch((err: Error) => {
+        if (controller.signal.aborted || guideRun.current?.id !== id) return
+        setGuiding({ id, query: text, status: 'failed', error: err.message })
+        finish(base, []) // the search itself still runs
+      })
   }
 
   // Any filter change (sidebar, chip, tag) applies at once and keeps the
-  // text search that is already running (the text box may hold unapplied text).
+  // text search that is already running (the text box may hold unapplied
+  // text) and the tags a deep search added.
   const applyNow = (update: ParamUpdate, query = appliedQuery) => {
+    abortGuiding()
     const next = applyUpdate(applied, update)
     if (query !== appliedQuery) setQueryDraft(query)
     setDraftFor(filtersKey(next) + query)
-    state.apply(next, query)
+    state.apply(next, query, state.autoTags)
   }
 
   // A value clicked in the results summary is added to that filter's selection.
@@ -266,7 +352,6 @@ export default function SearchPage() {
     if (!current.includes(value)) applyNow({ [filter]: [...current, value] })
   }
 
-  const appliedTags = (applied.tag as string[] | undefined) ?? []
   const selectTag = (tag: string) => {
     if (!appliedTags.includes(tag)) applyNow({ tag: [...appliedTags, tag] })
   }
@@ -375,7 +460,9 @@ export default function SearchPage() {
       : state.accessions
         ? `No project in the database has the accession ${state.accessions.join(', ')}`
         : state.semanticQuery
-          ? `No projects are similar enough to “${state.semanticQuery}”${hasFilters ? ' and match these filters' : ''}. Try describing the data differently.`
+          ? state.autoTags.length
+            ? `No tagged project is similar enough to “${state.semanticQuery}” and has the added tags. Remove a tag, or turn ${GUIDED_LABEL} off and search again.`
+            : `No projects are similar enough to “${state.semanticQuery}”${hasFilters ? ' and match these filters' : ''}. Try describing the data differently.`
           : 'No projects match these filters'
 
   const activeFilters = (stacked: boolean) => (
@@ -447,6 +534,21 @@ export default function SearchPage() {
             Describe the data, or enter BioProject or SRA study accessions (e.g. PRJNA787491, SRP079428), or a
             paper's DOI or PubMed ID to search with its title and abstract.
           </span>
+          {/* The deep search switch: on by default; a page setting kept in the URL (guided=0 when off). */}
+          <Tooltip title={guideDisabled ?? GUIDED_HELP} placement="bottomRight">
+            <span
+              className={`inline-flex items-center gap-2 rounded-md border border-solid px-2.5 py-1 text-sm ${
+                canGuide ? 'border-brand-sra bg-blue-50 text-brand-sra' : 'border-gray-200 bg-white text-gray-600'
+              }`}
+            >
+              <Switch checked={state.guided} disabled={!!guideDisabled} onChange={setGuided} aria-label={GUIDED_LABEL} />
+              <span className="font-medium">
+                <span aria-hidden>✦ </span>
+                {GUIDED_LABEL}
+              </span>
+              <InfoCircleOutlined className="text-gray-400" />
+            </span>
+          </Tooltip>
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2 pl-6">
@@ -488,16 +590,17 @@ export default function SearchPage() {
             table is. A new component per search restarts them. */}
         {showProgress && (
           <SearchProgress
-            key={requestKey}
-            semanticQuery={state.semanticQuery}
-            accessions={state.accessions}
+            key={progress?.guide !== undefined ? `guided-${progress.guide}` : requestKey}
+            semanticQuery={guidedProgress?.status === 'running' ? guidedProgress.query : state.semanticQuery}
+            accessions={guidedProgress?.status === 'running' ? null : state.accessions}
             filters={applied}
             sort={state.sort}
             page={state.page}
             pageSize={state.pageSize}
-            reference={reference}
+            reference={guidedProgress?.status === 'running' ? parseReference(guidedProgress.query) : reference}
             resolved={resolved}
             resolveFailed={resolveFailed}
+            guided={guidedProgress}
           />
         )}
 
@@ -505,6 +608,7 @@ export default function SearchPage() {
 
         <TagBar
           selected={appliedTags}
+          auto={state.autoTags}
           matchAny={applied.tag_any === 'true'}
           params={apiParams}
           suggest={!noSearch && !error && (results?.total ?? 0) > 0}
@@ -512,6 +616,15 @@ export default function SearchPage() {
           onRemove={(tag) => applyNow({ tag: appliedTags.filter((t) => t !== tag) })}
           onClear={() => applyNow({ tag: null, tag_any: null })}
         />
+
+        {guiding?.status === 'failed' && guiding.query === appliedQuery && (
+          <Alert
+            className="mb-3"
+            type="warning"
+            showIcon
+            title={`Couldn't choose tags from your text (${guiding.error}); the search ran without them.`}
+          />
+        )}
 
         {error && <Alert className="mb-4" type="error" showIcon title={error} />}
 
@@ -525,12 +638,7 @@ export default function SearchPage() {
           />
         )}
 
-        {noSearch && <SearchExamples
-            onRun={(ex) => {
-              startWithProgress(applyUpdate(applied, ex.filters ?? {}), ex.query)
-              applyNow(ex.filters ?? {}, ex.query)
-            }}
-          />}
+        {noSearch && <SearchExamples onRun={(ex) => runSearch(ex.query, applyUpdate(applied, ex.filters ?? {}))} />}
 
         {!noSearch && (
           <Table<SearchHit>

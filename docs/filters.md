@@ -140,8 +140,9 @@ The applied filters as chips (and accessions from the search box). Removing a ch
 
 ### Tags row
 
-- **Chosen tags** as blue chips, each removable, after "all of" or "any of" when there are two or more. **Clear all** removes only the tags (and turns **Match any of the tags** off).
+- **Chosen tags** as solid blue chips, each removable, after "all of" or "any of" when there are two or more. **Clear all** removes only the tags (and turns **Match any of the tags** off).
 - **Suggested tags** (dashed, with a +): the tags most common among the search's top 2,000 results, each added with one click. Hovering shows the tag's type and how many of the top results have it. They leave out the organism, tags already chosen and tags found on only one project. They load after the results, so they never slow them down (`GET /search/tag-summary`).
+- **Added tags** (✦): with the **Deep search** switch under the search box on, a text search first reads the tag words in the text and adds the matching tags ([search.md](search.md#deep-search)). They are ordinary chosen tags (`tag=` in the URL, also listed in `auto=`), removable like any other. The next text search drops them before choosing again; filter changes keep them. The switch is a page setting (`guided=0` when off), on by default, and can't be used with accessions or while **Match any of the tags** is on.
 
 Each row is hidden when it has nothing to show.
 

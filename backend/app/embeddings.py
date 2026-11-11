@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 _model = None
 _lock = threading.Lock()
+# Held while encoding: the model's tokenizer can't be used from two threads
+# at once, and concurrent batches would share the same CPU threads anyway.
+encode_lock = threading.Lock()
 
 
 def get_model():
@@ -42,7 +45,9 @@ def get_model():
 # Cached: the results and their tag summary embed the same search text.
 @functools.lru_cache(maxsize=256)
 def embed(text: str) -> list[float]:
-    vec = get_model().encode(text, normalize_embeddings=True, convert_to_numpy=True)
+    model = get_model()
+    with encode_lock:
+        vec = model.encode(text, normalize_embeddings=True, convert_to_numpy=True)
     return vec.tolist()
 
 

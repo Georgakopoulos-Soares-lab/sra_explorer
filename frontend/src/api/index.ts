@@ -6,6 +6,7 @@ import type {
   FacetValue,
   HealthStatus,
   PublicApiDocs,
+  QueryTags,
   ResolvedPublication,
   RunFilters,
   SearchHit,
@@ -61,6 +62,11 @@ export const api = {
   // The most common tags among a search's top results; takes the search's own parameters.
   tagSummary: (params: SearchParams, signal?: AbortSignal) =>
     apiGet<FacetValue[]>('/search/tag-summary', params, { signal }),
+
+  // The tags a deep search adds: the tag words in the search text (q)
+  // matched with the tags of the search's top results; takes the search's parameters.
+  queryTags: (params: SearchParams, signal?: AbortSignal) =>
+    apiGet<QueryTags>('/search/query-tags', params, { signal }),
 
   // Counts over everything a search matches (not just the page shown); takes the search's own parameters.
   searchSummary: (params: SearchParams, signal?: AbortSignal) =>

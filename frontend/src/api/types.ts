@@ -223,6 +223,42 @@ export interface SearchSummary {
   dimensions: SummaryDimension[]
 }
 
+// The deep search (GET /search/query-tags; backend/app/query_tags.py):
+// the tag words in the search text, matched with the tags of the search's top results.
+
+export interface QueryTag {
+  value: string
+  // Projects among the search's top results (the pool) with the tag, and among all tagged projects.
+  count: number
+  corpus: number
+  group: string | null
+  // The words of the text it matched (normalised) and how: as they are, a
+  // common organism name for the species, or similar by embedding (with the cosine).
+  phrase: string
+  match: 'exact' | 'alias' | 'similar'
+  similarity: number
+  selected: boolean
+  // Pool projects that have this tag and every tag selected before it (null
+  // when it wasn't counted), and why it wasn't selected.
+  remaining?: number | null
+  reason?: string | null
+}
+
+export interface QueryTags {
+  // The start of the text the tags were read from, and how many of its words were read.
+  text: string
+  words: number
+  // Top results examined, how many have tags and how many don't, and the
+  // fewest tagged ones that must keep every selected tag.
+  pool: number
+  tagged: number
+  untagged: number
+  floor: number
+  // Every tag considered, selected ones first.
+  tags: QueryTag[]
+  selected: string[]
+}
+
 // A DOI or PubMed ID from the search box, resolved to the paper it stands for.
 export interface ResolvedPublication {
   kind: 'doi' | 'pmid'

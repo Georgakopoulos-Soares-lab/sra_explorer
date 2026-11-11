@@ -1,6 +1,6 @@
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons'
 import { useEffect, useState, type ReactNode } from 'react'
-import type { ResolvedPublication } from '../api'
+import type { QueryTags, ResolvedPublication } from '../api'
 import { ALL_FILTERS, paramKeys, RELEVANCE_SORT } from './filters'
 import { referenceLabel, type Reference } from './reference'
 import type { FilterValues } from './useSearchState'
@@ -24,6 +24,14 @@ interface Timed {
   at: number
   text: ReactNode
   detail?: ReactNode
+}
+
+// A deep search's first phase: /search/query-tags choosing the tags
+// to add from the text, before the search itself runs.
+export interface GuidedState {
+  status: 'running' | 'done' | 'failed'
+  result?: QueryTags
+  error?: string
 }
 
 // Hidden for searches faster than this, so quick ones don't flash it.
@@ -74,6 +82,7 @@ export default function SearchProgress({
   reference,
   resolved,
   resolveFailed,
+  guided,
 }: {
   semanticQuery: string | null
   accessions: string[] | null
@@ -85,6 +94,8 @@ export default function SearchProgress({
   reference: Reference | null
   resolved?: ResolvedPublication
   resolveFailed?: boolean
+  // A deep search: the choice of tags, as it goes.
+  guided?: GuidedState
 }) {
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
@@ -93,15 +104,44 @@ export default function SearchProgress({
     return () => window.clearInterval(id)
   }, [])
 
-  // When the paper was found: the search proper starts from there.
+  // When the paper was found, and when the tags were chosen: the search
+  // proper starts after both.
   const [resolvedAt, setResolvedAt] = useState<number | null>(null)
   if (resolved && resolvedAt === null) setResolvedAt(elapsed)
+  const [guidedAt, setGuidedAt] = useState<number | null>(null)
+  if (guided && guided.status !== 'running' && guidedAt === null) setGuidedAt(elapsed)
 
   const labels = filterLabels(filters)
   const sorting = sortStep(sort, page, pageSize)
   const fixed: Step[] = [] // known from the start (or from the lookup)
   let timed: Timed[] = []
   let base = 0
+
+  // The deep search's own steps, before the search proper.
+  const guidedSteps = (g: GuidedState): Step[] => {
+    if (g.status === 'running') {
+      return [{ text: 'Finding the tag words in your text', detail: 'matching them with the tags of the top results', status: 'active' }]
+    }
+    if (g.status === 'failed') {
+      return [{ text: 'Could not choose tags from your text', detail: 'searching without them', status: 'error' }]
+    }
+    const r = g.result!
+    const chosen = r.tags.filter((t) => t.selected)
+    return [
+      {
+        text: 'Found the tag words in your text',
+        detail: `${plural(r.tags.length, 'candidate tag')} among the top ${r.pool.toLocaleString()} results`,
+        status: 'done',
+      },
+      chosen.length
+        ? {
+            text: <>Adding the tags {chosen.map((t) => t.value).join(', ')}</>,
+            detail: `from ${chosen.map((t) => `“${t.phrase}”`).join(', ')}`,
+            status: 'done',
+          }
+        : { text: 'No tag word in your text is shared by the results', detail: 'searching without tags', status: 'done' },
+    ]
+  }
 
   // Search by meaning: embed the text, then the hybrid search in fused_matches.
   const textSteps = (): Timed[] => [
@@ -113,6 +153,8 @@ export default function SearchProgress({
     { at: labels.length ? 3300 : 2700, ...sorting },
   ]
 
+  // Whether the search proper (the timed steps) has started.
+  let ready = false
   if (reference) {
     fixed.push({ text: `Recognised ${referenceLabel(reference)}`, status: 'done' })
     if (resolved) {
@@ -129,7 +171,7 @@ export default function SearchProgress({
           status: 'done',
         },
       )
-      timed = textSteps()
+      ready = true
       base = resolvedAt ?? elapsed
     } else if (resolveFailed) {
       fixed.push({ text: 'Could not look up the paper', status: 'error' })
@@ -142,6 +184,14 @@ export default function SearchProgress({
     }
   } else if (semanticQuery) {
     fixed.push({ text: 'Reading your description', detail: plural(wordCount(semanticQuery), 'word'), status: 'done' })
+    ready = true
+  }
+  if (guided && (reference || semanticQuery)) {
+    fixed.push(...guidedSteps(guided))
+    if (guided.status === 'running') ready = false
+    else base = Math.max(base, guidedAt ?? elapsed)
+  }
+  if (ready) {
     timed = textSteps()
   } else if (accessions) {
     fixed.push({
@@ -154,7 +204,7 @@ export default function SearchProgress({
       ...filterStep(labels, 500),
       { at: labels.length ? 1000 : 500, ...sorting },
     ]
-  } else {
+  } else if (!reference && !semanticQuery) {
     timed = [
       ...filterStep(labels, 0),
       { at: 600, text: 'Counting the matching projects' },

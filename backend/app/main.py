@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import admin, embeddings, models, normalize, public_api, schemas, search, search_summary, statistics, tags
+from . import admin, embeddings, models, normalize, public_api, query_tags, schemas, search, search_summary, statistics, tags
 from .database import Base, engine, get_db
 
 logger = logging.getLogger(__name__)
@@ -38,8 +38,15 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=search.warm_cache, daemon=True).start()
     threading.Thread(target=statistics.refresh, daemon=True).start()
     threading.Thread(target=tags.refresh, daemon=True).start()
-    threading.Thread(target=embeddings.warm_model, daemon=True).start()
+    threading.Thread(target=warm_embeddings, daemon=True).start()
     yield
+
+
+def warm_embeddings() -> None:
+    """Loads the embedding model, then embeds the common tags for the
+    deep search."""
+    embeddings.warm_model()
+    query_tags.warm()
 
 
 app = FastAPI(title="SRAscout API", lifespan=lifespan)
@@ -55,6 +62,7 @@ app.add_middleware(
 )
 
 app.include_router(search.router)
+app.include_router(query_tags.router)
 app.include_router(search_summary.router)
 app.include_router(statistics.router)
 app.include_router(tags.router)

@@ -248,6 +248,9 @@ class SiteSearchFilters(SearchFilters):
     q: Optional[str] = Field(None, max_length=1000)
     # Defaults to "relevance" with q, and to "release_desc" without.
     sort: Optional[Literal[tuple(SORTS) + ("relevance",)]] = None  # type: ignore[valid-type]
+    # Sent by the page with a deep search (query_tags.py chose its
+    # tags), so the usage page can tell them apart. Not a filter.
+    guided: Optional[bool] = None
 
 
 def split_values(column):
@@ -656,17 +659,22 @@ def attribute_values(name: str) -> tuple[tuple[str, int], ...]:
         return tuple((row.value, row.n) for row in conn.execute(stmt))
 
 
-_tag_cache: tuple[float, tuple[tuple[str, int, Optional[str]], ...], dict[str, Optional[str]]] = (0, (), {})
+_tag_cache: tuple[
+    float, tuple[tuple[str, int, Optional[str]], ...], dict[str, Optional[str]], dict[str, int]
+] = (0, (), {}, {})
 
 
 def clear_value_caches() -> None:
     """Forgets cached filter values and statistics, after the data changed
     (normalize.py). The next request computes them again."""
     global _tag_cache, _stats_cache
+    from . import query_tags  # imports this module
+
     _cache.clear()
     _narrowed.clear()
-    _tag_cache = (0, (), {})
+    _tag_cache = (0, (), {}, {})
     _stats_cache = (0, {})
+    query_tags.clear_cache()
 
 
 def tag_values() -> tuple[tuple[str, int, Optional[str]], ...]:
@@ -697,7 +705,10 @@ def tag_values() -> tuple[tuple[str, int, Optional[str]], ...]:
         """))
         values = tuple((row.tag, row.n, row.label) for row in rows)
     if values:
-        _tag_cache = (time.monotonic() + CACHE_SECONDS, values, {t: label for t, _, label in values})
+        _tag_cache = (
+            time.monotonic() + CACHE_SECONDS, values,
+            {t: label for t, _, label in values}, {t: n for t, n, _ in values},
+        )
     return values
 
 
@@ -705,6 +716,12 @@ def tag_labels() -> dict[str, Optional[str]]:
     """Tag -> its type, from tag_values."""
     tag_values()
     return _tag_cache[2]
+
+
+def tag_counts() -> dict[str, int]:
+    """Tag -> its number of projects, from tag_values."""
+    tag_values()
+    return _tag_cache[3]
 
 
 # Narrowed values for recent (field, other filters) pairs; each user picking
@@ -937,6 +954,23 @@ def compute_stats(db: Session) -> dict:
     }
 
 
+def top_rows(db: Session, filters: SiteSearchFilters, limit: int, *columns):
+    """A search's top `limit` rows (one per BioProject and SRA study) with
+    the given bioprojects columns, as a subquery: the most relevant for a
+    text search, otherwise the first in the chosen sort. Shared by the tag
+    suggestions and the deep search (query_tags.py)."""
+    where = and_(true(), *build_conditions(filters))
+    q = (filters.q or "").strip()
+    top = select(*columns).where(where)
+    if q:
+        _, fused = fused_matches(db, q)
+        top = top.join(fused, fused.c.bioproject == B.bioproject).order_by(fused.c.score.desc(), B.bioproject)
+    else:
+        sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
+        top = top.order_by(sort, B.bioproject, B.sra_study)
+    return top.limit(limit).subquery()
+
+
 # Suggested tags are counted over this many of a search's top results, which
 # keeps the count fast for broad searches; a few are returned.
 TAG_SUMMARY_PROJECTS = 2000
@@ -956,16 +990,7 @@ def tag_summary(
     already selected, and tags found on only one project. Only tagged projects
     count, so the counts are out of the tagged share of the results.
     """
-    where = and_(true(), *build_conditions(filters))
-    q = (filters.q or "").strip()
-    top = select(B.bioproject, B.organism_name).where(where)
-    if q:
-        _, fused = fused_matches(db, q)
-        top = top.join(fused, fused.c.bioproject == B.bioproject).order_by(fused.c.score.desc(), B.bioproject)
-    else:
-        sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
-        top = top.order_by(sort, B.bioproject, B.sra_study)
-    top = top.limit(TAG_SUMMARY_PROJECTS).subquery()
+    top = top_rows(db, filters, TAG_SUMMARY_PROJECTS, B.bioproject, B.organism_name)
 
     counts: Counter[str] = Counter()
     skip = set(filters.tag)

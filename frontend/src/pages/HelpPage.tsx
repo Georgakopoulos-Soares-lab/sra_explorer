@@ -149,11 +149,18 @@ const TUTORIALS: Tutorial[] = [
         filter panel to get projects with at least one, for example both <Text code>mouse</Text> and{' '}
         <Text code>Mus musculus</Text>.
       </>,
+      <>
+        Let the search choose the tags: turn on <b>Deep search</b> under the search box, then search. The tag words in
+        your text (organisms, diseases, tissues, cell types, …) are matched with the tags of the top results and the best
+        ones are added to the Tags row, marked ✦. For <Text code>{EXAMPLE_TEXT}</Text> that is{' '}
+        <Text code>Homo sapiens</Text> and <Text code>lung cancer</Text>. Remove them like any tag. The switch stays on
+        for your next searches; it is on by default.
+      </>,
     ],
     tips: [
       <>
         Only part of the projects have tags so far, and a tag filter leaves out the others. To search everything, describe the
-        data in the search box instead.
+        data in the search box instead, or turn Deep search off.
       </>,
     ],
     tryIt: { to: `/search?${q({ q: EXAMPLE_TEXT, tag: 'T cell' })}`, label: 'The lung tumour search, with the tag T cell' },
@@ -323,6 +330,20 @@ const FAQ: { q: string; a: ReactNode }[] = [
       <>
         The search compares meaning, not only words, so a project on "hepatocellular carcinoma" is found by "liver cancer".
         Projects that contain all your words rank higher. If a result seems off, add a filter or more detail to your text.
+      </>
+    ),
+  },
+  {
+    q: 'What does Deep search do?',
+    a: (
+      <>
+        It makes a text search more precise by adding tags to it. Your text is cut into phrases, which are matched with the
+        tags of the search's top results (up to 2,000): the same words (after case, plurals and spellings are evened out), a common
+        organism name for its species (human → Homo sapiens), or a close meaning by the same language model that powers the
+        search (lung tumour → lung cancer). The best matching tags are added one by one, most characteristic of the results
+        first, as long as enough results keep all of them. Only tagged projects can match a tag, so results are fewer; turn it off
+        to search every project. The API answer behind it (<Text code>/search/query-tags</Text>) lists every tag considered
+        and why it was or wasn't added.
       </>
     ),
   },
