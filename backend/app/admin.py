@@ -1,4 +1,5 @@
-"""Endpoints for the data normalisation page (/admin/normalize).
+"""Endpoints for the admin pages: data normalisation (/admin/normalize)
+and app usage (/admin/usage).
 
 They change the database, so every request must carry the admin code in the
 X-Admin-Code header. The code is ADMIN_CODE below (the same one the page
@@ -10,12 +11,14 @@ Left out of the OpenAPI docs on purpose.
 
 import os
 import secrets
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from . import normalize
+from . import normalize, usage
+from .database import get_db
 
 
 # Must match ADMIN_CODE in frontend/src/pages/NormalizePage.tsx.
@@ -146,3 +149,66 @@ def apply():
 @router.get("/jobs", response_model=list[Job])
 def jobs():
     return normalize.list_jobs()
+
+
+# --- App usage (usage.py) ----------------------------------------------------
+
+# How far back to look: a number of days, or 0 for everything.
+Days = Annotated[int, Query(ge=0)]
+UsageSource = Optional[Literal["site", "api"]]
+
+
+def _days(days: int) -> Optional[int]:
+    return days or None
+
+
+@router.get("/usage/summary")
+def usage_summary(days: Days = 30, source: UsageSource = None, db: Session = Depends(get_db)):
+    return usage.summary(db, _days(days), source)
+
+
+@router.get("/usage/series")
+def usage_series(
+    period: Literal["day", "week", "month"] = "day",
+    days: Days = 30,
+    source: UsageSource = None,
+    db: Session = Depends(get_db),
+):
+    return usage.series(db, period, _days(days), source)
+
+
+@router.get("/usage/hours")
+def usage_hours(days: Days = 30, source: UsageSource = None, db: Session = Depends(get_db)):
+    return usage.by_hour(db, _days(days), source)
+
+
+@router.get("/usage/queries")
+def usage_queries(
+    days: Days = 30, source: UsageSource = None, limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db),
+):
+    return usage.top_queries(db, _days(days), source, limit)
+
+
+@router.get("/usage/filters")
+def usage_filters(
+    days: Days = 30, source: UsageSource = None, limit: int = Query(30, ge=1, le=500), db: Session = Depends(get_db),
+):
+    return usage.top_filters(db, _days(days), source, limit)
+
+
+@router.get("/usage/recent")
+def usage_recent(
+    days: Days = 30,
+    source: UsageSource = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    return usage.recent(db, _days(days), source, limit, offset)
+
+
+@router.get("/usage/visitors")
+def usage_visitors(
+    days: Days = 30, source: UsageSource = None, limit: int = Query(30, ge=1, le=500), db: Session = Depends(get_db),
+):
+    return usage.visitors(db, _days(days), source, limit)

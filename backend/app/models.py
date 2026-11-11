@@ -127,6 +127,43 @@ class ValueNormalization(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class SearchEvent(Base):
+    """A search made by a user, on the website or through the public API.
+
+    Written by backend/app/usage.py after each search, so the admin usage page
+    (/admin/usage) can show what people search for and how much the app is
+    used. Never dropped by the data loading scripts.
+    """
+
+    __tablename__ = "search_events"
+    __table_args__ = (
+        Index("search_events_created_at_idx", "created_at"),
+        Index("search_events_source_idx", "source"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # "site": the website's search page. "api": the public API (/v1/...).
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    # "search": a filtered or free-text search. "lookup": a project fetched by accession.
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="search")
+    # The free-text query (q), or the accession of a lookup; NULL for a filter-only search.
+    query: Mapped[Optional[str]] = mapped_column(Text)
+    # The filters that were set, without defaults: {"organism": ["Homo sapiens"], ...}.
+    filters: Mapped[Optional[Any]] = mapped_column(JSONB)
+    sort: Mapped[Optional[str]] = mapped_column(Text)
+    # Results skipped: 0 for a new search, more when paging through its results.
+    offset: Mapped[int] = mapped_column(nullable=False, server_default="0")
+    # Matching projects, so unanswered searches can be found.
+    total: Mapped[Optional[int]] = mapped_column(BigInteger)
+    duration_ms: Mapped[Optional[int]]
+    # Who searched: the client IP, and for the website a random id the browser
+    # keeps (X-Visitor-Id header), which tells visitors apart better than IPs.
+    client_ip: Mapped[Optional[str]] = mapped_column(Text)
+    visitor: Mapped[Optional[str]] = mapped_column(Text)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text)
+
+
 class BioprojectEmbedding(Base):
     __tablename__ = "bioproject_embeddings"
     __table_args__ = (

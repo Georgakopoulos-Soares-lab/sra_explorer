@@ -8,7 +8,6 @@ import {
   Modal,
   Popconfirm,
   Select,
-  Space,
   Spin,
   Table,
   Tag,
@@ -18,71 +17,11 @@ import type { TableColumnsType } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../api'
 import { adminApi, type Job, type NormalizeField, type Rule, type ValueCount } from '../api/admin'
+import AdminGate from '../components/AdminGate'
 
 const { Title, Text, Paragraph } = Typography
 
-// The page is reached only by typing its address (it isn't in the menu) and
-// asks for this code. It is a simple gate, not security: the code is in the
-// page's JavaScript. What protects the database is the backend, which checks
-// the same code on every admin request (ADMIN_CODE in backend/app/admin.py).
-const ADMIN_CODE = 'srageek'
-const STORAGE_KEY = 'srascout-admin-code'
 const PAGE_SIZE = 50
-
-// Remembered for the browser tab, so a reload doesn't ask again.
-function storedCode(): string | null {
-  try {
-    return sessionStorage.getItem(STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function PasscodeGate({ onOpen }: { onOpen: (code: string) => void }) {
-  const [code, setCode] = useState('')
-  const [wrong, setWrong] = useState(false)
-  const submit = () => {
-    if (code === ADMIN_CODE) {
-      try {
-        sessionStorage.setItem(STORAGE_KEY, code)
-      } catch {
-        // No storage: the code is only kept for this page view.
-      }
-      onOpen(code)
-    } else {
-      setWrong(true)
-    }
-  }
-  return (
-    <div className="mx-auto max-w-sm px-4 py-20">
-      <Card>
-        <Title level={4}>Admin</Title>
-        <Paragraph type="secondary">Enter the code to open the data normalisation page.</Paragraph>
-        <Space.Compact className="w-full">
-          <Input.Password
-            autoFocus
-            placeholder="Code"
-            value={code}
-            status={wrong ? 'error' : undefined}
-            onChange={(e) => {
-              setCode(e.target.value)
-              setWrong(false)
-            }}
-            onPressEnter={submit}
-          />
-          <Button type="primary" onClick={submit}>
-            Open
-          </Button>
-        </Space.Compact>
-        {wrong && (
-          <Text type="danger" className="mt-2 block text-sm">
-            Wrong code.
-          </Text>
-        )}
-      </Card>
-    </div>
-  )
-}
 
 const errorMessage = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e))
 
@@ -506,7 +445,5 @@ function Normalizer({ code }: { code: string }) {
 }
 
 export default function NormalizePage() {
-  const [code, setCode] = useState<string | null>(() => (storedCode() === ADMIN_CODE ? ADMIN_CODE : null))
-  if (!code) return <PasscodeGate onOpen={setCode} />
-  return <Normalizer code={code} />
+  return <AdminGate what="data normalisation">{(code) => <Normalizer code={code} />}</AdminGate>
 }

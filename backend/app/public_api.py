@@ -9,11 +9,13 @@ It uses the same search logic as the website (search.py), so results match.
 
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+import time
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Request
 from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.orm import Session
 
-from . import schemas, tags
+from . import schemas, tags, usage
 from .database import get_db
 from .rate_limit import WINDOW_SECONDS, rate_limit
 from .search import (
@@ -120,11 +122,14 @@ def api_info():
 @router.get("/projects", response_model=schemas.PublicSearchResults, summary="Search projects")
 def search_projects(
     filters: Annotated[SearchFilters, Query()],
+    request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Search BioProject/SRA study pairs. Within one filter, several values
     match any of them (repeat the parameter: `?platform=ILLUMINA&platform=PACBIO_SMRT`).
     Different filters must all match. See `/v1/filters` for every parameter."""
+    started = time.perf_counter()
     where = and_(true(), *build_conditions(filters))
     total = db.scalar(select(func.count()).select_from(B).where(where))
     stmt = (
@@ -134,11 +139,13 @@ def search_projects(
         .limit(filters.limit)
         .offset(filters.offset)
     )
+    results = db.scalars(stmt).all()
+    usage.record(background, request, source="api", params=filters, total=total, started=started)
     return {
         "total": total,
         "limit": filters.limit,
         "offset": filters.offset,
-        "results": db.scalars(stmt).all(),
+        "results": results,
     }
 
 
@@ -160,13 +167,17 @@ def semantic_search(q: str = Query(..., description="Natural-language descriptio
 )
 def get_project(
     accession: Annotated[str, Path(description="BioProject or SRA study accession", pattern=ACCESSION_PATTERN)],
+    request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """A BioProject can have several SRA studies, so this returns a list."""
+    started = time.perf_counter()
     acc = accession.upper()
     rows = db.scalars(
         select(B).where(or_(B.bioproject == acc, B.sra_study == acc)).order_by(B.bioproject, B.sra_study)
     ).all()
+    usage.record(background, request, source="api", kind="lookup", query=acc, total=len(rows), started=started)
     if not rows:
         raise HTTPException(status_code=404, detail=f"No project with accession {acc}")
     return {"results": rows}

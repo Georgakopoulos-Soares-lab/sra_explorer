@@ -32,6 +32,23 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   return qs ? `${url}?${qs}` : url
 }
 
+// A random id kept by the browser and sent with every request, so the admin
+// usage page can count visitors (backend/app/usage.py). It identifies the
+// browser, not the person, and is never shown on the site.
+const VISITOR_KEY = 'srascout-visitor'
+function visitorId(): string | undefined {
+  try {
+    let id = localStorage.getItem(VISITOR_KEY)
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)
+      localStorage.setItem(VISITOR_KEY, id)
+    }
+    return id
+  } catch {
+    return undefined
+  }
+}
+
 export interface RequestOptions {
   query?: object
   // Sent as JSON.
@@ -42,12 +59,14 @@ export interface RequestOptions {
 
 export async function apiRequest<T>(method: 'GET' | 'POST' | 'DELETE', path: string, options: RequestOptions = {}): Promise<T> {
   const { query, body, headers, signal } = options
+  const visitor = visitorId()
   const response = await fetch(buildUrl(path, query as Record<string, QueryValue>), {
     method,
     signal,
     headers: {
       Accept: 'application/json',
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(visitor ? { 'X-Visitor-Id': visitor } : {}),
       ...headers,
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,

@@ -8,6 +8,7 @@ import NormalizePage from './pages/NormalizePage'
 import SearchPage from './pages/SearchPage'
 import StatisticsPage from './pages/StatisticsPage'
 import TagsPage from './pages/TagsPage'
+import UsagePage from './pages/UsagePage'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
           <Route path="docs/api" element={<ApiDocsPage />} />
           {/* Admin only; linked at the far right of the menu. */}
           <Route path="admin/normalize" element={<NormalizePage />} />
+          <Route path="admin/usage" element={<UsagePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

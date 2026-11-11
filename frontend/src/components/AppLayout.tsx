@@ -11,8 +11,11 @@ const NAV = [
   { key: '/help', label: <Link to="/help">Help</Link> },
 ]
 
-// Kept apart at the far right: the admin page, not part of the public site.
-const ADMIN_NAV = [{ key: '/admin/normalize', label: <Link to="/admin/normalize">Normalization</Link> }]
+// Kept apart at the far right: the admin pages, not part of the public site.
+const ADMIN_NAV = [
+  { key: '/admin/normalize', label: <Link to="/admin/normalize">Normalization</Link> },
+  { key: '/admin/usage', label: <Link to="/admin/usage">Usage</Link> },
+]
 
 export default function AppLayout() {
   const { pathname } = useLocation()

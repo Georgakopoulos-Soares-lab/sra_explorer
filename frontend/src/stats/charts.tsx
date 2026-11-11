@@ -60,7 +60,7 @@ function barPath(x: number, y: number, w: number, base: number) {
 const MARGIN = { top: 12, right: 20, bottom: 26, left: 52 }
 
 // Columns per year. `partial` marks the last column as an incomplete year.
-export function ColumnChart({ data, format, unit, partial, height = 260, xLabel = 'year', formatX }: {
+export function ColumnChart({ data, format, unit, partial, height = 260, xLabel = 'year', formatX, axisX }: {
   data: { x: number; y: number }[]
   format: (n: number) => string
   unit: string
@@ -69,6 +69,8 @@ export function ColumnChart({ data, format, unit, partial, height = 260, xLabel 
   // What x is (for the chart's accessible name) and how to show it in the tooltip.
   xLabel?: string
   formatX?: (x: number) => string
+  // How to show x under the columns (default: the number itself).
+  axisX?: (x: number) => string
 }) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
@@ -109,7 +111,7 @@ export function ColumnChart({ data, format, unit, partial, height = 260, xLabel 
                 />
                 {(data.length - 1 - i) % every === 0 && (
                   <text x={x + barW / 2} y={base + 16} textAnchor="middle" fontSize={11} fill={MUTED} className="tabular-nums">
-                    {isPartial ? `${d.x}*` : d.x}
+                    {isPartial ? `${axisX ? axisX(d.x) : d.x}*` : axisX ? axisX(d.x) : d.x}
                   </text>
                 )}
                 {/* The hover target is the whole column slot, not just the bar. */}

@@ -22,7 +22,7 @@ from collections import Counter
 from datetime import date
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import (
     Column, Date, MetaData, Table, and_, case, exists, false, func, literal_column, or_, select, text, true,
@@ -31,7 +31,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import Session
 from sqlalchemy.types import Text
 
-from . import embeddings, models, publications, schemas
+from . import embeddings, models, publications, schemas, usage
 from .database import SessionLocal, engine, get_db
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -354,23 +354,29 @@ def build_conditions(f: SearchFilters) -> list:
 @router.get("/bioprojects", response_model=schemas.SearchResults)
 def search_bioprojects(
     filters: Annotated[SiteSearchFilters, Query()],
+    request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    started = time.perf_counter()
     where = and_(true(), *build_conditions(filters))
     q = (filters.q or "").strip()
     if q:
-        return hybrid_search(db, q, where, filters)
-
-    sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
-    total = db.scalar(select(func.count()).select_from(B).where(where))
-    stmt = (
-        select(B)
-        .where(where)
-        .order_by(sort, B.bioproject, B.sra_study)
-        .limit(filters.limit)
-        .offset(filters.offset)
-    )
-    return {"total": total, "items": db.scalars(stmt).all()}
+        result = hybrid_search(db, q, where, filters)
+    else:
+        sort = SORTS[filters.sort if filters.sort in SORTS else "release_desc"]
+        total = db.scalar(select(func.count()).select_from(B).where(where))
+        stmt = (
+            select(B)
+            .where(where)
+            .order_by(sort, B.bioproject, B.sra_study)
+            .limit(filters.limit)
+            .offset(filters.offset)
+        )
+        result = {"total": total, "items": db.scalars(stmt).all()}
+    # Written after the response is sent (usage.py), for the admin usage page.
+    usage.record(background, request, source="site", params=filters, query=q, total=result["total"], started=started)
+    return result
 
 
 def query_text(q: str) -> str:

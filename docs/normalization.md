@@ -16,7 +16,7 @@ The page asks for a code, currently `srageek`, and remembers it for the browser 
 
 | Where | Constant |
 | --- | --- |
-| The page | `ADMIN_CODE` in `frontend/src/pages/NormalizePage.tsx` |
+| The page | `ADMIN_CODE` in `frontend/src/components/AdminGate.tsx` (shared with the usage page, [usage.md](usage.md)) |
 | The API | `ADMIN_CODE` in `backend/app/admin.py` |
 
 The page's copy is in its JavaScript, so it only keeps the page out of sight; it is not what protects the database. What protects the database is the API: every `/admin` request must carry the code in the `X-Admin-Code` header, and the API refuses it otherwise (401). The API never stores or logs the code. There is no login system: the page sends the code it was given with each request.
