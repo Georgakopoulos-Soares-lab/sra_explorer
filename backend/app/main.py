@@ -4,8 +4,11 @@ import threading
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -60,6 +63,34 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+# How the parameters are named to people, in the validation message.
+PARAMETER_NAMES = {"q": "The search text"}
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """A 422 whose detail is a sentence a person can read (the page shows it
+    as is), with the usual error list under "errors"."""
+    errors = exc.errors()
+    sentences = []
+    for error in errors:
+        name = str(error["loc"][-1]) if error.get("loc") else "the request"
+        message = error.get("msg", "is invalid")
+        if error.get("type") == "string_too_long":
+            limit = error.get("ctx", {}).get("max_length")
+            message = f"can have at most {limit:,} characters" if limit else "is too long"
+        elif message.startswith("Input should be"):
+            message = "should be" + message[len("Input should be"):]
+        elif message.startswith("Input "):
+            message = message[len("Input "):]
+        sentences.append(f"{PARAMETER_NAMES.get(name, f'The parameter {name}')} {message}.")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": " ".join(sentences), "errors": jsonable_encoder(errors)},
+    )
+
 
 app.include_router(search.router)
 app.include_router(query_tags.router)

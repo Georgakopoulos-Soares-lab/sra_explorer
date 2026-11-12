@@ -71,7 +71,9 @@ logger = logging.getLogger(__name__)
 
 # The top results examined, as in search.tag_summary.
 POOL_SIZE = 2000
-POOL_TIMEOUT_MS = 20000
+# The pool query runs the search itself (a cold text search can take 10-20 s
+# before Postgres has its pages cached), so this is well above that.
+POOL_TIMEOUT_MS = 45000
 # A tag must be on this many pool projects to be considered.
 MIN_COUNT = 3
 # Words of the text that are read (the tagging pipeline reads the same).
@@ -506,7 +508,9 @@ def query_tags(db: Session, filters: SiteSearchFilters) -> dict:
         pool, tagged, by_tag = pool_of(db, filters)
     except Exception as e:
         if "statement timeout" in str(e):
-            raise HTTPException(status_code=503, detail="The search is too slow to guide by tags right now.")
+            raise HTTPException(
+                status_code=503, detail="Choosing tags from your text took too long; please try the search again.",
+            )
         raise
     tags = sorted((t for t, s in by_tag.items() if len(s) >= MIN_COUNT), key=lambda t: (-len(by_tag[t]), t))
     matches = matches_of(phrases, tags)

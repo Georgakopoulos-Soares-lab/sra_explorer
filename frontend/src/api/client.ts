@@ -57,26 +57,47 @@ export interface RequestOptions {
   signal?: AbortSignal
 }
 
+// What to tell the person when the backend's answer carries no message of its own.
+function messageForStatus(status: number): string {
+  if (status === 400 || status === 422) return "The request couldn't be understood. Please check the search text and filters."
+  if (status === 404) return 'Nothing was found for this request.'
+  if (status === 413 || status === 414) return 'The search text is too long. Please shorten it.'
+  if (status === 429) return 'Too many requests at once. Please wait a moment and try again.'
+  if (status === 502 || status === 503 || status === 504) return 'The server is busy or restarting. Please try again in a moment.'
+  if (status >= 500) return 'Something went wrong on the server. Please try again in a moment.'
+  return 'The request failed. Please try again.'
+}
+
 export async function apiRequest<T>(method: 'GET' | 'POST' | 'DELETE', path: string, options: RequestOptions = {}): Promise<T> {
   const { query, body, headers, signal } = options
   const visitor = visitorId()
-  const response = await fetch(buildUrl(path, query as Record<string, QueryValue>), {
-    method,
-    signal,
-    headers: {
-      Accept: 'application/json',
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      ...(visitor ? { 'X-Visitor-Id': visitor } : {}),
-      ...headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+  let response: Response
+  try {
+    response = await fetch(buildUrl(path, query as Record<string, QueryValue>), {
+      method,
+      signal,
+      headers: {
+        Accept: 'application/json',
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(visitor ? { 'X-Visitor-Id': visitor } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch (err) {
+    if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) throw err
+    // The server could not be reached at all (offline, or the backend is down).
+    throw new ApiError(0, "Couldn't reach the server. Check your connection and try again.", err)
+  }
 
   if (!response.ok) {
-    // FastAPI errors look like {"detail": "..."} or {"detail": [validation errors]}.
+    // FastAPI errors look like {"detail": "..."}: the backend words its
+    // own errors (and validation errors, main.py) for people, and the
+    // page shows them as they are. Anything else gets a plain message by
+    // status; the status itself is kept on the error, never shown.
     const errorBody = await response.json().catch(() => null)
     const detail = errorBody?.detail
-    const message = typeof detail === 'string' ? detail : `Request failed with status ${response.status}`
+    const message = typeof detail === 'string' && detail ? detail : messageForStatus(response.status)
     throw new ApiError(response.status, message, detail)
   }
 

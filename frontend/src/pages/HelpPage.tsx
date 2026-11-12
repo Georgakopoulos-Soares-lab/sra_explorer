@@ -162,6 +162,11 @@ const TUTORIALS: Tutorial[] = [
         Only part of the projects have tags so far, and a tag filter leaves out the others. To search everything, describe the
         data in the search box instead, or turn Deep search off.
       </>,
+      <>
+        Whole abstracts are welcome: the search box takes up to 4,000 characters, and the tags are chosen from the first
+        300 words. If the tags can't be chosen (for example when the search is slow), the search still runs, without them;
+        searching again usually works.
+      </>,
     ],
     tryIt: { to: `/search?${q({ q: EXAMPLE_TEXT, tag: 'T cell' })}`, label: 'The lung tumour search, with the tag T cell' },
   },

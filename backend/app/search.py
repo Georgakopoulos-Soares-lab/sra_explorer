@@ -242,10 +242,18 @@ class SearchFilters(BaseModel):
     offset: int = Field(0, ge=0)
 
 
+# The longest search text (characters): room for a long structured abstract.
+# The embedding reads about the first 400 words (embeddings.MAX_SEQ_LENGTH
+# tokens) and the deep search the first query_tags.MAX_WORDS, so a longer
+# text would add nothing. The page's search box stops at the same length
+# (SearchPage.tsx MAX_QUERY_CHARS); main.py words the error for longer texts.
+MAX_QUERY_CHARS = 4000
+
+
 class SiteSearchFilters(SearchFilters):
     """The website's search: the public filters plus free-text search."""
 
-    q: Optional[str] = Field(None, max_length=1000)
+    q: Optional[str] = Field(None, max_length=MAX_QUERY_CHARS)
     # Defaults to "relevance" with q, and to "release_desc" without.
     sort: Optional[Literal[tuple(SORTS) + ("relevance",)]] = None  # type: ignore[valid-type]
     # Sent by the page with a deep search (query_tags.py chose its
@@ -398,7 +406,7 @@ def query_text(q: str) -> str:
 
 
 @router.get("/resolve", response_model=schemas.ResolvedPublication)
-def resolve_publication(q: str = Query(..., max_length=1000)):
+def resolve_publication(q: str = Query(..., max_length=MAX_QUERY_CHARS)):
     """The paper a DOI or PubMed ID in the search box stands for, so the page
     can show what is being searched. 400 when q isn't a reference, 404 when
     the paper isn't found, 502 when the lookup service can't be reached."""

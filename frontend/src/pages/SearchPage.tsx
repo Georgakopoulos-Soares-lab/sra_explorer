@@ -47,6 +47,10 @@ const publicationShade = (n: number) =>
       ? '!border-[#73d13d] !bg-[#95de64] !text-[#135200]' // 2: green-4, green-9 text
       : '!border-[#95de64] !bg-[#d9f7be] !text-[#389e0d]' // 1: green-2, green-7 text
 const rowKey = (p: SearchHit) => `${p.bioproject}:${p.sra_study}`
+// The longest search text, as the backend accepts it (search.py
+// MAX_QUERY_CHARS): a long abstract fits; the box stops there and shows the
+// count as the text nears it.
+const MAX_QUERY_CHARS = 4000
 // The deep search switch, under the search box.
 const GUIDED_LABEL = 'Deep search'
 const GUIDED_HELP =
@@ -508,6 +512,7 @@ export default function SearchPage() {
             size="large"
             allowClear
             autoSize={{ minRows: 2, maxRows: 8 }}
+            maxLength={MAX_QUERY_CHARS}
             placeholder="Describe the data, or enter accessions (e.g. PRJNA169753, SRP079428) or a paper's DOI or PubMed ID"
             value={queryDraft}
             onChange={(e) => setQueryDraft(e.target.value)}
@@ -533,6 +538,14 @@ export default function SearchPage() {
           <span>
             Describe the data, or enter BioProject or SRA study accessions (e.g. PRJNA787491, SRP079428), or a
             paper's DOI or PubMed ID to search with its title and abstract.
+            {/* The length, once the text nears the box's limit (a pasted text is cut there). */}
+            {queryDraft.length >= MAX_QUERY_CHARS * 0.8 && (
+              <span className={`ml-2 ${queryDraft.length >= MAX_QUERY_CHARS ? 'text-amber-600' : 'text-gray-400'}`}>
+                {queryDraft.length >= MAX_QUERY_CHARS
+                  ? `Only the first ${MAX_QUERY_CHARS.toLocaleString()} characters fit; the search reads the first few hundred words anyway.`
+                  : `${queryDraft.length.toLocaleString()} / ${MAX_QUERY_CHARS.toLocaleString()} characters`}
+              </span>
+            )}
           </span>
           {/* The deep search switch: on by default; a page setting kept in the URL (guided=0 when off). */}
           <Tooltip title={guideDisabled ?? GUIDED_HELP} placement="bottomRight">
@@ -617,12 +630,14 @@ export default function SearchPage() {
           onClear={() => applyNow({ tag: null, tag_any: null })}
         />
 
-        {guiding?.status === 'failed' && guiding.query === appliedQuery && (
+        {/* Not when the search itself failed: its error says what went wrong. */}
+        {guiding?.status === 'failed' && guiding.query === appliedQuery && !error && (
           <Alert
             className="mb-3"
             type="warning"
             showIcon
-            title={`Couldn't choose tags from your text (${guiding.error}); the search ran without them.`}
+            title="Couldn't choose tags from your text; the search ran without them."
+            description={guiding.error}
           />
         )}
 
