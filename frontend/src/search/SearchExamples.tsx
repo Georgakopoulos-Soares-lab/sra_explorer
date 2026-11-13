@@ -19,7 +19,6 @@ export const SEARCH_EXAMPLES: SearchExample[] = [
     icon: <SearchOutlined />,
     title: 'Describe the data',
     query: 'single-cell RNA-seq of human lung tumours',
-    filters: { tissue: ['Lung', 'Lung tissue', 'Lung adenocarcinoma', 'Lung tumor', 'Lung cancer'] },
     text: 'Free text search. Results match by meaning.',
   },
   {

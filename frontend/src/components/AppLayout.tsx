@@ -11,11 +11,8 @@ const NAV = [
   { key: '/help', label: <Link to="/help">Help</Link> },
 ]
 
-// Kept apart at the far right: the admin pages, not part of the public site.
-const ADMIN_NAV = [
-  { key: '/admin/normalize', label: <Link to="/admin/normalize">Normalization</Link> },
-  { key: '/admin/usage', label: <Link to="/admin/usage">Usage</Link> },
-]
+// The admin pages (/admin/normalize, /admin/usage) are deliberately not linked
+// here; they are reached by direct URL only.
 
 export default function AppLayout() {
   const { pathname } = useLocation()
@@ -34,8 +31,6 @@ export default function AppLayout() {
           items={NAV}
           className="min-w-0 flex-1"
         />
-        {/* Hidden on phones, where the header has no room for it. */}
-        <Menu theme="dark" mode="horizontal" selectedKeys={[pathname]} items={ADMIN_NAV} className="!hidden shrink-0 md:!flex" />
       </Layout.Header>
 
       <Layout.Content>
