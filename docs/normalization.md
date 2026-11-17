@@ -12,16 +12,14 @@ Values in the database come from submitters and are spelled many ways: `Liver`, 
 
 ## Access
 
-The page asks for a code, currently `srageek`, and remembers it for the browser tab. The code is hardcoded in two places, which must match:
+The page asks for a code and remembers it for the browser tab. The code is never in the source: the API reads it from the `ADMIN_CODE` environment variable (set it in `backend/.env`, which is not in git). When `ADMIN_CODE` is unset or empty, every `/admin` request is refused (503) and the admin pages can't be opened.
 
-| Where | Constant |
+| Where | What |
 | --- | --- |
-| The page | `ADMIN_CODE` in `frontend/src/components/AdminGate.tsx` (shared with the usage page, [usage.md](usage.md)) |
-| The API | `ADMIN_CODE` in `backend/app/admin.py` |
+| The page | `frontend/src/components/AdminGate.tsx` (shared with the usage page, [usage.md](usage.md)): sends the typed code to the API to check it |
+| The API | `require_admin` in `backend/app/admin.py` |
 
-The page's copy is in its JavaScript, so it only keeps the page out of sight; it is not what protects the database. What protects the database is the API: every `/admin` request must carry the code in the `X-Admin-Code` header, and the API refuses it otherwise (401). The API never stores or logs the code. There is no login system: the page sends the code it was given with each request.
-
-To change the code, change both constants. A deployment can also override the API's code with an `ADMIN_CODE` environment variable, without editing the code; then the page's constant must match it. Use HTTPS in production, since the header travels with every request.
+Every `/admin` request must carry the code in the `X-Admin-Code` header, and the API refuses it otherwise (401). The API never stores or logs the code. There is no login system: the page sends the code it was given with each request. To change the code, change `ADMIN_CODE` and restart the API. Use HTTPS in production, since the header travels with every request.
 
 ## The page
 

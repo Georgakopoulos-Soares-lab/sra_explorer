@@ -20,3 +20,5 @@ Automations/Auto_update/data/
 Automations/Auto_update/work/
 Automations/Auto_update/state/
 Automations/Auto_update/logs/
+.DS_Store
+backend/.venvn/

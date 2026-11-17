@@ -2,10 +2,9 @@
 and app usage (/admin/usage).
 
 They change the database, so every request must carry the admin code in the
-X-Admin-Code header. The code is ADMIN_CODE below (the same one the page
-asks for, in frontend/src/pages/NormalizePage.tsx); an ADMIN_CODE environment
-variable overrides it. There is no login: the page asks for the code once and
-sends it with each request. The code is never stored or logged by the API.
+X-Admin-Code header. The code is the ADMIN_CODE environment variable (never
+in the source); when it isn't set, the admin endpoints are disabled. There is
+no login: the page asks for the code once and sends it with each request. The code is never stored or logged by the API.
 Left out of the OpenAPI docs on purpose.
 """
 
@@ -21,12 +20,15 @@ from . import normalize, usage
 from .database import get_db
 
 
-# Must match ADMIN_CODE in frontend/src/pages/NormalizePage.tsx.
-ADMIN_CODE = os.getenv("ADMIN_CODE") or "srageek"
+# From the environment (backend/.env in production, not in git). Unset or
+# empty disables the admin pages.
+ADMIN_CODE = os.getenv("ADMIN_CODE", "")
 
 
 def require_admin(x_admin_code: Optional[str] = Header(default=None)) -> None:
     expected = ADMIN_CODE
+    if not expected:
+        raise HTTPException(status_code=503, detail="The admin pages are disabled (ADMIN_CODE is not set).")
     if not x_admin_code or not secrets.compare_digest(x_admin_code.encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="Wrong admin code.")
 

@@ -22,6 +22,7 @@ DATABASE_URL=postgresql+psycopg://postgres:<password>@localhost:5432/srascout
 CORS_ORIGINS=https://www.srascout.com,https://srascout.com
 TRUST_FORWARDED_FOR=true
 EMBEDDING_THREADS=4
+ADMIN_CODE=<a long random string>
 ```
 
 The venv was built with Python 3.14 and the CPU build of torch (`pip install torch --index-url https://download.pytorch.org/whl/cpu`) before `requirements.txt`.

@@ -104,7 +104,7 @@ Backend environment variables:
 | `SEMANTIC_MIN_SIMILARITY` | `0.5` | Text searches leave out projects whose cosine similarity to the text is below this, unless they contain all the words |
 | `TEXT_MIN_SIMILARITY` | `0.3` | Projects that contain all the words are still left out below this similarity |
 | `EMBEDDING_THREADS` | `4` | CPU threads used to embed search text |
-| `ADMIN_CODE` | `srageek` (hardcoded in `backend/app/admin.py`) | Overrides the code the normalisation page must send with each `/admin` request ([normalization.md](normalization.md#access)) |
+| `ADMIN_CODE` | unset (admin pages disabled) | The code the admin pages must send with each `/admin` request ([normalization.md](normalization.md#access)) |
 
 ## Pages
 

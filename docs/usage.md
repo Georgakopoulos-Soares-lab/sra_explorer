@@ -12,7 +12,7 @@ Every search made on the website or through the public API is recorded, and the 
 
 ## Access
 
-The page asks for the same code as the normalisation page ([normalization.md](normalization.md#access)), `ADMIN_CODE` in `frontend/src/components/AdminGate.tsx` and `backend/app/admin.py`, and remembers it for the browser tab, so opening one admin page opens the other.
+The page asks for the same code as the normalisation page ([normalization.md](normalization.md#access)), the `ADMIN_CODE` environment variable of the API, and remembers it for the browser tab, so opening one admin page opens the other.
 
 ## What is recorded
 
