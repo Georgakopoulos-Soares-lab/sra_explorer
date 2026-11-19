@@ -253,10 +253,17 @@ export default function HomePage() {
             ) : (
               <Tag>Pending publication</Tag>
             )}
+            {PUBLICATION.venue && <Tag color="blue">{PUBLICATION.venue}</Tag>}
           </div>
           {PUBLICATION.citation ? (
-            <Paragraph copyable className="!mb-0 rounded bg-gray-50 p-3 font-mono text-sm">
-              {PUBLICATION.citation}
+            <Paragraph
+              copyable={{
+                text: `${PUBLICATION.citation.authors} ${PUBLICATION.citation.title} ${PUBLICATION.citation.source}`,
+              }}
+              className="!mb-0 rounded bg-gray-50 p-3 font-mono text-sm"
+            >
+              {PUBLICATION.citation.authors} <strong>{PUBLICATION.citation.title}</strong>{' '}
+              {PUBLICATION.citation.source}
             </Paragraph>
           ) : (
             <Text type="secondary">
