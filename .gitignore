@@ -22,3 +22,4 @@ Automations/Auto_update/state/
 Automations/Auto_update/logs/
 .DS_Store
 backend/.venvn/
+*.xlsx
